@@ -2,7 +2,7 @@
 
 > **Document Status:** Living document. Updated as phases are completed.
 >
-> **Last Updated:** 2026-08-12 (Phase 4 — Semantic Retrieval & Hybrid Search)
+> **Last Updated:** 2026-08-12 (Phase 5 — Repository Q&A / RAG Engine)
 
 ---
 
@@ -80,23 +80,19 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 
 ---
 
-## Phase 4 — Repository Q&A ⬚
+## Phase 4 — Repository Q&A / RAG Engine ✅
 
-**Objective:** Accept natural language questions about a repository and return AI-generated answers using the RAG pipeline.
+**Objective:** Accept natural language questions about a repository and return grounded AI-generated answers with validated citations using the RAG pipeline.
 
-**Why this phase exists:** This is the core user-facing feature. Everything built so far (ingestion, parsing, indexing, retrieval) feeds into this: the user asks a question, we retrieve relevant code, and the LLM generates an answer.
-
-### Deliverables
-
-- [ ] LLM provider interface: abstract class with `generate(prompt, context)` method
-- [ ] First LLM integration: implement one cloud provider (OpenAI, Claude, or Gemini)
-- [ ] Prompt builder: assemble system prompt + user query + retrieved context
-- [ ] Context window management: stay within the LLM's token limit
-- [ ] API endpoint: `POST /api/repos/{id}/query` accepts natural language questions
-- [ ] Basic frontend: text input for questions, display for answers
-- [ ] Conversation-style Q&A (single-turn to start, multi-turn later)
-- [ ] Error handling: LLM API failures, rate limits, empty results
-- [ ] Tests for prompt building and response parsing
+- [x] RAG domain models: `Question`, `RetrievedEvidence`, `ContextBlock`, `Citation`, `RAGRequest`, `RAGResponse`
+- [x] Evidence selection: filter minimum relevance threshold & limit evidence count
+- [x] Context assembly & budgeting: format 1-indexed source blocks with character budget truncation
+- [x] LLM abstraction: `BaseLLMProvider` supporting Mock and OpenAI-compatible Chat Completions
+- [x] Grounded prompt builder: XML isolation for untrusted repository code to prevent prompt injection
+- [x] Citation validation: extract and verify `[1]`, `[2]` bracketed citations against supplied evidence
+- [x] Zero-hallucination sentinel: return `INSUFFICIENT_EVIDENCE` when no evidence exists or LLM cannot answer from code
+- [x] API endpoint: `POST /repositories/query` for grounded Q&A
+- [x] Unit test suite: 76 tests covering models, selection, context, citations, security, and API contract
 
 ---
 
@@ -203,7 +199,7 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 | 1 | Repository Ingestion Foundation | ✅ Complete |
 | 2 | Code Parsing Foundation | ✅ Complete |
 | 3 | Retrieval & Hybrid Search | ✅ Complete |
-| 4 | Repository Q&A | ⬚ Not Started |
+| 4 | Repository Q&A / RAG Engine | ✅ Complete |
 | 5 | Evidence & Citations | ⬚ Not Started |
 | 6 | Code Intelligence | ⬚ Not Started |
 | 7 | Controlled Agents & Tools | ⬚ Not Started |

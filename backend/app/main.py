@@ -18,6 +18,7 @@ What is "app.main:app"?
 from fastapi import FastAPI
 
 from app.api.router_parsing import router as parsing_router
+from app.api.router_rag import router as rag_router
 from app.api.router_repositories import router as repositories_router
 from app.api.router_retrieval import router as retrieval_router
 
@@ -36,9 +37,11 @@ app = FastAPI(
 # - repositories router adds: POST /repositories/scan
 # - parsing router adds:      POST /repositories/parse
 # - retrieval router adds:    POST /repositories/search/keyword
+# - rag router adds:          POST /repositories/query
 app.include_router(repositories_router)
 app.include_router(parsing_router)
 app.include_router(retrieval_router)
+app.include_router(rag_router)
 
 
 @app.get("/health")
