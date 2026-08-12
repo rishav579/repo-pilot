@@ -1,14 +1,15 @@
 """
-Tests for Grounded Repository Q&A / RAG Engine (Phase 5).
+Tests for Grounded Repository Q&A / RAG Engine & Production Hardening (Phase 5.1).
 
 Tests cover all required categories:
 1. Domain Models & Serialization
 2. Evidence Selection (Ranking, Threshold, Limits, Deduplication)
 3. Context Builder (Metadata Formatting, Character Budget Truncation)
 4. LLM Providers (Mock, Failure Handling)
-5. RAG Engine Service (Grounded Answers, Citations, Insufficient Evidence Fallback, Error Resilience)
+5. RAG Engine Service (Cases A-E Failure Analysis, Grounded Answers, Citations, Insufficient Evidence Fallback)
 6. Security (Prompt Injection Boundaries, Path Boundary Safety)
-7. API Endpoint Contract (POST /repositories/query)
+7. Performance Timing Instrumentation
+8. API Endpoint Contract (POST /repositories/query)
 """
 
 import pytest
@@ -20,7 +21,6 @@ from app.services.rag.context import ContextBuilder
 from app.services.rag.engine import RAGService
 from app.services.rag.evidence import EvidenceSelector
 from app.services.rag.llm.base import BaseLLMProvider, LLMError
-from app.services.rag.llm.mock import MockLLMProvider
 from app.services.rag.models import ContextBlock, RAGRequest, RetrievedEvidence
 from app.services.rag.prompt import INSUFFICIENT_EVIDENCE_SENTINEL, PromptBuilder
 from app.services.retrieval.models import CodeChunk, SearchResult
@@ -43,6 +43,23 @@ class FailingLLMProvider(BaseLLMProvider):
         self, prompt: str, system_instruction: str = "", temperature: float = 0.2
     ) -> str:
         raise LLMError("Simulated LLM API network timeout")
+
+
+class EmptyLLMProvider(BaseLLMProvider):
+    """LLM provider that returns empty text to test Case E."""
+
+    @property
+    def provider_name(self) -> str:
+        return "empty"
+
+    @property
+    def model_name(self) -> str:
+        return "empty-llm"
+
+    def generate(
+        self, prompt: str, system_instruction: str = "", temperature: float = 0.2
+    ) -> str:
+        return "   "  # Whitespace / empty string
 
 
 class TestEvidenceSelector:
@@ -160,7 +177,7 @@ class TestCitationValidator:
 
 
 class TestSecurityPromptBoundaries:
-    """Tests for prompt injection resilience."""
+    """Tests for prompt injection & repository boundary resilience."""
 
     def test_prompt_injection_text_in_code_does_not_override_rules(self):
         injection_code = (
@@ -174,9 +191,18 @@ class TestSecurityPromptBoundaries:
         assert injection_code in prompt
         assert "</untrusted_retrieved_evidence>" in prompt
 
+    def test_path_traversal_boundary_safety(self):
+        """Path traversal attempts like ../../etc/passwd must raise 400 Bad Request."""
+        payload = {
+            "repository_path": "../../etc/passwd",
+            "question": "Where is health_check?",
+        }
+        res = client.post("/repositories/query", json=payload)
+        assert res.status_code == 400
+
 
 class TestRAGServiceIntegration:
-    """Tests for RAGService pipeline."""
+    """Tests for RAGService pipeline & failure cases A-E."""
 
     @pytest.fixture
     def rag_service(self):
@@ -197,11 +223,12 @@ class TestRAGServiceIntegration:
         assert response.evidence_count > 0
         assert len(response.citations) > 0
         assert response.citations[0].is_valid
+        assert response.performance_ms.total_ms > 0
 
-    def test_insufficient_evidence_for_unrelated_question(self, rag_service, sample_repo):
+    def test_insufficient_evidence_case_a_b(self, rag_service, sample_repo):
         req = RAGRequest(
             repository_path=str(sample_repo),
-            question="xyz_nonexistent_function_quantum_computing_999",
+            question="qubit_simulator_quantum_gate_matrix_multiply",
             mode="keyword",
             top_k=5,
         )
@@ -211,7 +238,7 @@ class TestRAGServiceIntegration:
         assert INSUFFICIENT_EVIDENCE_SENTINEL in response.answer
         assert response.citations == []
 
-    def test_llm_failure_handling(self, sample_repo):
+    def test_llm_failure_case_c(self, sample_repo):
         failing_llm = FailingLLMProvider()
         srv = RAGService(llm_provider=failing_llm, db_path=":memory:")
 
@@ -224,6 +251,21 @@ class TestRAGServiceIntegration:
 
         assert response.status == "error"
         assert "LLM Provider Error" in response.answer
+        srv.close()
+
+    def test_empty_unusable_llm_output_case_e(self, sample_repo):
+        empty_llm = EmptyLLMProvider()
+        srv = RAGService(llm_provider=empty_llm, db_path=":memory:")
+
+        req = RAGRequest(
+            repository_path=str(sample_repo),
+            question="Where is add?",
+            mode="keyword",
+        )
+        response = srv.query(req)
+
+        assert response.status == "unusable_output"
+        assert "empty or unusable" in response.answer
         srv.close()
 
 
@@ -245,7 +287,8 @@ class TestRAGAPIEndpoint:
         assert "answer" in data
         assert "status" in data
         assert "citations" in data
-        assert "retrieval_mode" in data
+        assert "performance_ms" in data
+        assert "total_ms" in data["performance_ms"]
         assert data["status"] in ("grounded", "insufficient_evidence")
 
     def test_api_invalid_repository_path(self):

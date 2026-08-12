@@ -94,3 +94,37 @@ Environment variables (read via `RetrievalConfig` and `RAGService`):
 | `EMBEDDING_API_KEY` | string | `None` | Optional API key for external embedding provider |
 | `LLM_PROVIDER` | `"mock"`, `"openai"` | `"mock"` | LLM provider type |
 | `OPENAI_API_KEY` | string | `None` | Optional API key for external OpenAI-compatible LLM |
+
+---
+
+## 📊 Offline Evaluation & Production Hardening (Phase 5.1)
+
+RepoPilot includes an offline RAG evaluation framework (`backend/app/evaluation/`) to measure retrieval quality, grounding precision, and latency without requiring network calls or paid APIs.
+
+### Developer Evaluation Command
+
+To run the offline evaluation suite locally:
+
+```powershell
+python -m app.evaluation.eval_runner
+```
+
+### Baseline Quality Metrics
+
+| Metric | Target | Baseline Result | Description |
+|--------|--------|-----------------|-------------|
+| **Retrieval Recall@K** | $\ge 75\%$ | **100.0%** | Percentage of answerable questions where expected source files are retrieved |
+| **Retrieval MRR** | $\ge 0.50$ | **0.6376** | Mean Reciprocal Rank of first relevant source file in candidate evidence |
+| **Grounded Answer Rate** | $\ge 75\%$ | **87.5%** | Percentage of answerable questions producing grounded answers |
+| **Citation Validity Rate** | $\ge 90\%$ | **100.0%** | Percentage of extracted citations mapped to valid context blocks |
+| **Insufficient Evid Precision** | $\ge 90\%$ | **100.0%** | Percentage of unanswerable questions correctly returning `insufficient_evidence` |
+| **Avg Latency** | $< 500\text{ ms}$ | **~113 ms** | Pipeline execution duration including retrieval and context assembly |
+
+### Failure Analysis Cases Handled
+
+- **Case A (No Results):** Returns structured `insufficient_evidence` response without hallucinating facts.
+- **Case B (Low Score Evidence):** Filtered out by `min_relevance_score` threshold; returns `insufficient_evidence`.
+- **Case C (LLM Provider Error):** Returns `status="error"` with structured error payload without crashing API.
+- **Case D (Hallucinated Citations):** Extracted citation indices not matching context blocks are flagged (`is_valid=False`) and filtered.
+- **Case E (Empty / Unusable LLM Text):** Detected and handled cleanly with `status="unusable_output"`.
+

@@ -1,5 +1,5 @@
 """
-Repository Q&A / RAG Service Engine — Orchestrates retrieval, evidence selection, context assembly, LLM generation, and citation validation.
+Repository Q&A / RAG Service Engine — Orchestrates retrieval, evidence selection, context assembly, LLM generation, citation validation, and performance timing.
 
 PIPELINE:
 1. Validate Repository Path & User Question
@@ -9,16 +9,17 @@ PIPELINE:
 5. Build Grounded Security Prompt (`PromptBuilder`)
 6. Generate Answer (`BaseLLMProvider`)
 7. Extract & Validate Citations (`CitationValidator`)
-8. Format `RAGResponse` (grounded | insufficient_evidence)
+8. Format `RAGResponse` (grounded | insufficient_evidence | error | unusable_output)
 """
 
+import time
 from app.services.ingestion.scanner import validate_repository_path
 from app.services.rag.citation import CitationValidator
 from app.services.rag.context import ContextBuilder
 from app.services.rag.evidence import EvidenceSelector
 from app.services.rag.llm.base import BaseLLMProvider, LLMError
 from app.services.rag.llm.mock import MockLLMProvider
-from app.services.rag.models import RAGRequest, RAGResponse
+from app.services.rag.models import PerformanceMetrics, RAGRequest, RAGResponse
 from app.services.rag.prompt import INSUFFICIENT_EVIDENCE_SENTINEL, PromptBuilder
 from app.services.retrieval.engine import RetrievalService
 from app.services.retrieval.normalizer import normalize_query
@@ -26,7 +27,7 @@ from app.services.retrieval.normalizer import normalize_query
 
 class RAGService:
     """
-    Core RAG Service Layer for grounded repository question answering.
+    Core RAG Service Layer for grounded repository question answering with performance timing instrumentation.
     """
 
     def __init__(
@@ -46,14 +47,18 @@ class RAGService:
             request: RAGRequest instance containing question, repo path, mode, top_k.
 
         Returns:
-            RAGResponse object.
+            RAGResponse object with performance timing metrics.
         """
+        t_start = time.perf_counter()
+        metrics = PerformanceMetrics()
+
         # 1. Validate repository path
         validated_repo_path = validate_repository_path(request.repository_path)
 
         # 2. Normalize question
         normalized_q = normalize_query(request.question)
         if not normalized_q:
+            metrics.total_ms = round((time.perf_counter() - t_start) * 1000, 2)
             return RAGResponse(
                 question=request.question,
                 answer="Question cannot be empty or whitespace only.",
@@ -62,80 +67,122 @@ class RAGService:
                 evidence_count=0,
                 provider_name=self.llm_provider.provider_name,
                 model_name=self.llm_provider.model_name,
+                performance_ms=metrics,
             )
 
         # 3. Perform Repository Retrieval
+        t_ret_start = time.perf_counter()
         self.retrieval_service.index_repository(str(validated_repo_path))
         search_res = self.retrieval_service.search(
             normalized_q, mode=request.mode, top_k=request.top_k
         )
+        metrics.retrieval_ms = round((time.perf_counter() - t_ret_start) * 1000, 2)
+        total_candidates = len(search_res.results)
 
         # 4. Evidence Selection
+        t_sel_start = time.perf_counter()
         selector = EvidenceSelector(
             min_relevance_score=request.min_relevance_score,
             max_evidence_chunks=request.top_k,
         )
         selected_evidence = selector.select_evidence(search_res.results)
+        metrics.evidence_selection_ms = round((time.perf_counter() - t_sel_start) * 1000, 2)
 
+        # Case A / B: No candidates or all candidates below threshold
         if not selected_evidence:
+            metrics.total_ms = round((time.perf_counter() - t_start) * 1000, 2)
             return RAGResponse(
                 question=normalized_q,
                 answer=INSUFFICIENT_EVIDENCE_SENTINEL,
                 status="insufficient_evidence",
                 citations=[],
                 retrieval_mode=request.mode,
+                retrieved_candidate_count=total_candidates,
                 evidence_count=0,
                 context_truncated=False,
                 provider_name=self.llm_provider.provider_name,
                 model_name=self.llm_provider.model_name,
+                performance_ms=metrics,
             )
 
         # 5. Context Assembly & Budgeting
+        t_ctx_start = time.perf_counter()
         context_builder = ContextBuilder(max_context_chars=request.max_context_chars)
         assembled_context, context_blocks, truncated = context_builder.build_context(
             selected_evidence
         )
+        metrics.context_assembly_ms = round((time.perf_counter() - t_ctx_start) * 1000, 2)
 
         # 6. Prompt Construction
         system_instr = PromptBuilder.get_system_instruction()
         user_prompt = PromptBuilder.build_user_prompt(normalized_q, assembled_context)
 
-        # 7. LLM Answer Generation
+        # 7. LLM Answer Generation (Case C: LLM failure handling)
+        t_llm_start = time.perf_counter()
         try:
             raw_answer = self.llm_provider.generate(
                 prompt=user_prompt,
                 system_instruction=system_instr,
             )
         except LLMError as e:
+            metrics.llm_generation_ms = round((time.perf_counter() - t_llm_start) * 1000, 2)
+            metrics.total_ms = round((time.perf_counter() - t_start) * 1000, 2)
             return RAGResponse(
                 question=normalized_q,
                 answer=f"LLM Provider Error: {str(e)}",
                 status="error",
                 retrieval_mode=request.mode,
+                retrieved_candidate_count=total_candidates,
                 evidence_count=len(selected_evidence),
+                context_character_count=len(assembled_context),
                 context_truncated=truncated,
                 provider_name=self.llm_provider.provider_name,
                 model_name=self.llm_provider.model_name,
+                performance_ms=metrics,
+            )
+        metrics.llm_generation_ms = round((time.perf_counter() - t_llm_start) * 1000, 2)
+
+        # Case E: Empty / whitespace / unusable LLM output
+        if not raw_answer or not raw_answer.strip():
+            metrics.total_ms = round((time.perf_counter() - t_start) * 1000, 2)
+            return RAGResponse(
+                question=normalized_q,
+                answer="LLM returned an empty or unusable response.",
+                status="unusable_output",
+                retrieval_mode=request.mode,
+                retrieved_candidate_count=total_candidates,
+                evidence_count=len(selected_evidence),
+                context_character_count=len(assembled_context),
+                context_truncated=truncated,
+                provider_name=self.llm_provider.provider_name,
+                model_name=self.llm_provider.model_name,
+                performance_ms=metrics,
             )
 
         # Handle explicit insufficient evidence response from LLM
-        if INSUFFICIENT_EVIDENCE_SENTINEL in raw_answer or not raw_answer.strip():
+        if INSUFFICIENT_EVIDENCE_SENTINEL in raw_answer:
+            metrics.total_ms = round((time.perf_counter() - t_start) * 1000, 2)
             return RAGResponse(
                 question=normalized_q,
                 answer=INSUFFICIENT_EVIDENCE_SENTINEL,
                 status="insufficient_evidence",
                 citations=[],
                 retrieval_mode=request.mode,
+                retrieved_candidate_count=total_candidates,
                 evidence_count=len(selected_evidence),
+                context_character_count=len(assembled_context),
                 context_truncated=truncated,
                 provider_name=self.llm_provider.provider_name,
                 model_name=self.llm_provider.model_name,
+                performance_ms=metrics,
             )
 
-        # 8. Citation Extraction & Validation
-        citations = CitationValidator.extract_and_validate(raw_answer, context_blocks)
-        # Filter out invalid citations if any exist
-        valid_citations = [c for c in citations if c.is_valid]
+        # 8. Citation Extraction & Validation (Case D: Hallucinated citations)
+        all_citations = CitationValidator.extract_and_validate(raw_answer, context_blocks)
+        valid_citations = [c for c in all_citations if c.is_valid]
+        invalid_citations = [c for c in all_citations if not c.is_valid]
+
+        metrics.total_ms = round((time.perf_counter() - t_start) * 1000, 2)
 
         return RAGResponse(
             question=normalized_q,
@@ -143,10 +190,15 @@ class RAGService:
             status="grounded",
             citations=valid_citations,
             retrieval_mode=request.mode,
+            retrieved_candidate_count=total_candidates,
             evidence_count=len(selected_evidence),
+            valid_citation_count=len(valid_citations),
+            invalid_citation_count=len(invalid_citations),
+            context_character_count=len(assembled_context),
             context_truncated=truncated,
             provider_name=self.llm_provider.provider_name,
             model_name=self.llm_provider.model_name,
+            performance_ms=metrics,
         )
 
     def close(self):

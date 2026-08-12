@@ -101,11 +101,17 @@ class SQLiteFTSIndex:
         if not clean_query:
             return []
 
-        # Sanitize query and prepare FTS tokens
-        # Extract alphanumeric words and underscore identifiers
-        tokens = re.findall(r"\w+", clean_query)
-        if not tokens:
+        STOP_WORDS = {
+            "where", "is", "the", "in", "a", "an", "how", "what", "which",
+            "are", "of", "to", "for", "on", "with", "does", "do", "it", "be"
+        }
+        all_tokens = re.findall(r"\w+", clean_query)
+        if not all_tokens:
             return []
+
+        # Filter stop words if non-stop word tokens exist
+        substantive_tokens = [t for t in all_tokens if t.lower() not in STOP_WORDS]
+        tokens = substantive_tokens if substantive_tokens else all_tokens
 
         # Build FTS match query with prefix matching (e.g. "scan*" matches "scanner")
         fts_conditions = [f'"{t}" OR {t}*' for t in tokens]
