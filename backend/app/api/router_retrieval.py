@@ -1,16 +1,20 @@
 """
 Repository Retrieval API Router
 
+Thin router layer that delegates request normalization, validation, indexing, and retrieval
+to the RetrievalService layer.
+
 Endpoints:
-- POST /repositories/search/keyword : Indexes repo and performs BM25 keyword search.
+- POST /repositories/search/keyword : Indexes repository and executes keyword code retrieval.
 """
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.ingestion.scanner import ScannerError
-from app.services.retrieval.engine import KeywordSearchEngine
+from app.services.retrieval.engine import RetrievalService
 from app.services.retrieval.models import SearchResponse
+from app.services.retrieval.normalizer import normalize_query
 
 router = APIRouter(
     prefix="/repositories",
@@ -38,20 +42,24 @@ def search_keyword_endpoint(request: KeywordSearchRequest):
     """
     Perform deterministic BM25 keyword search over a repository's source code.
 
-    Indexes the repository code chunks on-the-fly and returns matching code chunks
-    with file paths, line ranges, symbol names, and signatures preserved.
+    Delegates to RetrievalService for query normalization, indexing, deduplication, and search.
     """
-    if not request.query.strip():
-        raise HTTPException(status_code=400, detail="Search query cannot be empty")
+    normalized = normalize_query(request.query)
+    if not normalized:
+        raise HTTPException(
+            status_code=400, detail="Search query cannot be empty or whitespace only"
+        )
 
-    engine = KeywordSearchEngine()
+    service = RetrievalService()
     try:
-        engine.index_repository(request.path)
-        response = engine.search(request.query, top_k=request.top_k)
+        service.index_repository(request.path)
+        response = service.search(normalized, top_k=request.top_k)
         return response
     except ScannerError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrieval error: {str(e)}")
     finally:
-        engine.close()
+        service.close()

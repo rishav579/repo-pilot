@@ -176,8 +176,17 @@ class SQLiteFTSIndex:
                 if t.lower() in (chunk.code_content.lower() + (chunk.symbol_name or "").lower())
             ]
 
-            results.append(SearchResult(chunk=chunk, score=score, matched_keywords=matched))
+            results.append(
+                SearchResult(
+                    chunk=chunk,
+                    score=score,
+                    score_type="bm25",
+                    matched_keywords=matched,
+                )
+            )
 
+        # Deterministic sorting: sort by relevance score DESC, then chunk_id ASC as tiebreaker
+        results.sort(key=lambda r: (-r.score, r.chunk.chunk_id))
         return results
 
     def close(self):

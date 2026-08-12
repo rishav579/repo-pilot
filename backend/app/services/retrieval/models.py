@@ -42,6 +42,7 @@ class SearchResult(BaseModel):
 
     chunk: CodeChunk
     score: float
+    score_type: str = "bm25"
     matched_keywords: list[str] = []
 
 
