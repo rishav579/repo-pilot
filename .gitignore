@@ -1,0 +1,105 @@
+# ========================================
+# RepoPilot .gitignore
+# ========================================
+
+# ---- Environment Variables ----
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env*.local
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python tools
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.cover
+coverage.xml
+nosetests.xml
+
+# ---- Node.js ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---- Frontend Build Output ----
+dist/
+build/
+out/
+.next/
+.nuxt/
+*.tsbuildinfo
+
+# ---- IDE / Editor Files ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# ---- OS Files ----
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+
+# ---- Docker (future) ----
+docker-compose.override.yml
+
+# ---- Databases ----
+*.sqlite3
+*.db
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Misc ----
+*.bak
+*.tmp
+*.temp
+.cache/
