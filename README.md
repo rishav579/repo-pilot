@@ -2,7 +2,7 @@
 
 **AI Software Engineering Intelligence Platform**
 
-[![Status](https://img.shields.io/badge/Status-Phase%200%20--%20Foundation-blue)]()
+[![Status](https://img.shields.io/badge/Status-Phase%201%20--%20Backend%20Foundation-blue)]()
 [![License](https://img.shields.io/badge/License-MIT-green)]()
 
 ---
@@ -52,28 +52,93 @@ RepoPilot aims to solve this by combining code parsing, hybrid search (keyword +
 ```
 repo-pilot/
 ├── README.md                  # You are here
+├── .gitignore                 # Files Git should ignore
+├── backend/
+│   ├── requirements.txt       # Python dependencies
+│   └── app/
+│       ├── __init__.py        # Makes app/ a Python package
+│       └── main.py            # FastAPI application entry point
 └── docs/
     ├── ARCHITECTURE.md        # System architecture and design
     ├── ROADMAP.md             # Phased development plan
     └── DECISIONS.md           # Architecture Decision Records
 ```
 
-> This structure will expand as development progresses through each phase.
-
 ## Current Status
 
-**Phase 0 — Foundation** (In Progress)
+**Phase 0 — Foundation** ✅ Complete
 
 - [x] Create project documentation
-- [ ] Initialize Git repository
-- [ ] Set up development environment
-- [ ] Create project skeleton
+- [x] Initialize Git repository
+- [x] Set up development environment
+- [x] Create project skeleton
+
+**Phase 1 — Backend Foundation** 🔧 In Progress
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full development plan.
 
 ## Setup Instructions
 
-> 🚧 Setup instructions will be added when the application code is created in later phases.
+### Prerequisites
+
+- **Python 3.10+** — check with `python --version`
+- **Git** — check with `git --version`
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/rishav579/repo-pilot.git
+cd repo-pilot
+```
+
+### 2. Create a Python Virtual Environment
+
+A virtual environment isolates this project's Python packages from your system Python.
+
+```bash
+python -m venv .venv
+```
+
+### 3. Activate the Virtual Environment
+
+**Windows (PowerShell):**
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**Windows (Command Prompt):**
+```cmd
+.venv\Scripts\activate.bat
+```
+
+**macOS / Linux:**
+```bash
+source .venv/bin/activate
+```
+
+You should see `(.venv)` appear at the start of your terminal prompt.
+
+### 4. Install Dependencies
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+### 5. Run the Backend Server
+
+```bash
+cd backend
+uvicorn app.main:app --reload
+```
+
+The `--reload` flag auto-restarts the server when you change code (development only).
+
+### 6. Verify It Works
+
+Open your browser and visit:
+
+- **Health check:** [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) — should return `{"status": "ok"}`
+- **API docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) — interactive Swagger UI
 
 ## Documentation
 

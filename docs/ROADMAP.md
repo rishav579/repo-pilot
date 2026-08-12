@@ -2,7 +2,7 @@
 
 > **Document Status:** Living document. Updated as phases are completed.
 >
-> **Last Updated:** 2026-08-12 (Phase 0 — Foundation)
+> **Last Updated:** 2026-08-12 (Phase 1 — Backend Foundation)
 
 ---
 
@@ -20,7 +20,7 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 
 ---
 
-## Phase 0 — Foundation 🔧
+## Phase 0 — Foundation ✅
 
 **Objective:** Set up the project structure, documentation, development environment, and tooling before writing any application code.
 
@@ -29,13 +29,13 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 ### Deliverables
 
 - [x] Create project documentation (README, Architecture, Roadmap, Decisions)
-- [ ] Initialize Git repository
-- [ ] Create `.gitignore` for Python, Node.js, environment files, IDE configs
-- [ ] Set up Python backend project structure (`backend/`)
-- [ ] Set up React + TypeScript + Vite frontend project structure (`frontend/`)
-- [ ] Create `.env.example` with placeholder environment variables
-- [ ] Set up basic logging configuration
-- [ ] Verify the project skeleton runs (backend starts, frontend starts)
+- [x] Initialize Git repository
+- [x] Create `.gitignore` for Python, Node.js, environment files, IDE configs
+- [x] Set up Python backend project structure (`backend/`)
+- [ ] Set up React + TypeScript + Vite frontend project structure (`frontend/`) — deferred to a later phase
+- [ ] Create `.env.example` with placeholder environment variables — deferred until needed
+- [ ] Set up basic logging configuration — deferred to Phase 1
+- [x] Verify the project skeleton runs (backend health endpoint works)
 
 ---
 
@@ -218,7 +218,7 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 0 | Foundation | 🔧 In Progress |
+| 0 | Foundation | ✅ Complete |
 | 1 | Repository Ingestion | ⬚ Not Started |
 | 2 | Code Parsing & Indexing | ⬚ Not Started |
 | 3 | Retrieval | ⬚ Not Started |
