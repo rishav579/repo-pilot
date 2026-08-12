@@ -7,3 +7,7 @@ fastapi==0.115.12
 
 # ASGI server (runs the FastAPI application)
 uvicorn[standard]==0.34.3
+
+# Testing
+pytest==8.4.1
+httpx==0.28.1
