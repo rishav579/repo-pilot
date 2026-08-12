@@ -19,6 +19,7 @@ from fastapi import FastAPI
 
 from app.api.router_parsing import router as parsing_router
 from app.api.router_repositories import router as repositories_router
+from app.api.router_retrieval import router as retrieval_router
 
 # Create the FastAPI application instance.
 # - title: shown in the auto-generated API docs at /docs
@@ -34,8 +35,10 @@ app = FastAPI(
 # Each router handles a group of related endpoints.
 # - repositories router adds: POST /repositories/scan
 # - parsing router adds:      POST /repositories/parse
+# - retrieval router adds:    POST /repositories/search/keyword
 app.include_router(repositories_router)
 app.include_router(parsing_router)
+app.include_router(retrieval_router)
 
 
 @app.get("/health")
