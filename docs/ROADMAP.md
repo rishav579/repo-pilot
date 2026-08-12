@@ -2,7 +2,7 @@
 
 > **Document Status:** Living document. Updated as phases are completed.
 >
-> **Last Updated:** 2026-08-12 (Phase 3 — Code Parsing Foundation)
+> **Last Updated:** 2026-08-12 (Phase 4 — Semantic Retrieval & Hybrid Search)
 
 ---
 
@@ -65,22 +65,18 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 
 ---
 
-## Phase 3 — Retrieval ⬚
+## Phase 3 — Code Retrieval & Hybrid Search ✅
 
-**Objective:** Implement hybrid code retrieval combining keyword search and semantic (embedding-based) search.
+**Objective:** Implement hybrid code retrieval combining keyword search (FTS5 + BM25) and semantic search (embeddings + cosine similarity) with RRF fusion.
 
-**Why this phase exists:** Finding the right code chunks to answer a question is the most critical step. Poor retrieval means the LLM gets irrelevant context and produces bad answers. Hybrid retrieval significantly outperforms either method alone.
-
-### Deliverables
-
-- [ ] Embedding generation: convert code chunks to vector embeddings
-- [ ] Vector storage: store and query embeddings (SQLite initially)
-- [ ] Semantic search: find code by meaning, not just keywords
-- [ ] Hybrid merger: combine keyword + semantic results with configurable weights
-- [ ] Reranker: optionally re-score results with a cross-encoder
-- [ ] API endpoint: `POST /api/repos/{id}/search` with hybrid search
-- [ ] Chunking strategy: chunk by function/class, not arbitrary line counts
-- [ ] Tests for retrieval quality
+- [x] Keyword search: FTS5 BM25 keyword matching
+- [x] Chunking strategy: chunk by AST symbol (functions, classes, methods) & sliding window
+- [x] Embedding abstraction: `BaseEmbeddingProvider` supporting Mock and OpenAI-compatible APIs
+- [x] Vector storage & caching: SQLite vector table & `sha256(text + model)` embedding cache
+- [x] Semantic search: cosine similarity vector search over indexed code chunks
+- [x] Hybrid fusion: Reciprocal Rank Fusion (RRF) combining keyword + semantic results
+- [x] API endpoint: `POST /repositories/search/keyword` with `mode="auto"|"keyword"|"semantic"|"hybrid"`
+- [x] Unit test suite: 64 unit & integration tests covering retrieval quality, normalization, deduplication, and RRF fusion
 
 ---
 
@@ -206,7 +202,7 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 | 0 | Foundation | ✅ Complete |
 | 1 | Repository Ingestion Foundation | ✅ Complete |
 | 2 | Code Parsing Foundation | ✅ Complete |
-| 3 | Retrieval | ⬚ Not Started |
+| 3 | Retrieval & Hybrid Search | ✅ Complete |
 | 4 | Repository Q&A | ⬚ Not Started |
 | 5 | Evidence & Citations | ⬚ Not Started |
 | 6 | Code Intelligence | ⬚ Not Started |

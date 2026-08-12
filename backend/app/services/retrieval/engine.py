@@ -1,25 +1,26 @@
 """
-Retrieval Service & Engine — Orchestrates indexing, query normalization, strategy execution, and result formatting.
+Retrieval Service & Engine — Orchestrates indexing, embeddings, query normalization, strategy execution, and hybrid search.
 
-FLOW:
-    1. Parse repository using Phase 3 Tree-sitter parser (`parse_repository`)
-    2. Convert parsed files into CodeChunks using symbol & sliding-window strategies (`chunk_parsed_file`)
-    3. Index CodeChunks into SQLite FTS5 database (`SQLiteFTSIndex`)
-    4. Normalize user query (`normalize_query`)
-    5. Execute retrieval strategy (`KeywordRetriever` / `HybridRetriever`)
-    6. Deduplicate and rank results deterministically (`deduplicate_search_results`)
-    7. Return formatted `SearchResponse`
+SUPPORTED RETRIEVAL MODES:
+- "keyword": FTS5 BM25 keyword search only.
+- "semantic": Embedding vector cosine similarity search only.
+- "hybrid": Reciprocal Rank Fusion (RRF) combining keyword + semantic results.
 """
 
 from pathlib import Path
 
 from app.services.indexing.chunker import chunk_parsed_file
 from app.services.indexing.sqlite_fts import SQLiteFTSIndex
+from app.services.indexing.sqlite_vector import SQLiteVectorStorage
 from app.services.parsing.parser import parse_repository
+from app.services.retrieval.config import RetrievalConfig
 from app.services.retrieval.deduplicator import deduplicate_search_results
+from app.services.retrieval.embeddings.base import BaseEmbeddingProvider, EmbeddingError
+from app.services.retrieval.embeddings.mock import MockEmbeddingProvider
+from app.services.retrieval.embeddings.openai import OpenAICompatibleEmbeddingProvider
 from app.services.retrieval.models import CodeChunk, SearchResponse, SearchResult
 from app.services.retrieval.normalizer import normalize_query
-from app.services.retrieval.strategies import HybridRetriever, KeywordRetriever
+from app.services.retrieval.strategies import HybridRetriever, KeywordRetriever, SemanticRetriever
 
 DEFAULT_TOP_K = 10
 MAX_TOP_K = 100
@@ -27,47 +28,131 @@ MAX_TOP_K = 100
 
 class RetrievalService:
     """
-    Service layer for code indexing and retrieval.
+    Service layer for code indexing, embedding persistence, and multi-strategy retrieval.
     """
 
-    def __init__(self, db_path: str = ":memory:"):
-        self.fts_index = SQLiteFTSIndex(db_path=db_path)
-        self.keyword_retriever = KeywordRetriever(self.fts_index)
-        self.hybrid_retriever = HybridRetriever([self.keyword_retriever])
+    def __init__(
+        self,
+        db_path: str = ":memory:",
+        config: RetrievalConfig | None = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
+    ):
+        self.config = config or RetrievalConfig.from_env()
+        self.db_path = db_path
 
-    def index_repository(self, repo_path: str) -> int:
+        # Database storage instances
+        self.fts_index = SQLiteFTSIndex(db_path=db_path)
+        self.vector_storage = SQLiteVectorStorage(db_path=db_path)
+
+        # In-memory chunk mapping
+        self.chunk_map: dict[str, CodeChunk] = {}
+
+        # Embedding Provider Setup
+        if embedding_provider is not None:
+            self.embedding_provider = embedding_provider
+        elif self.config.provider_type == "openai":
+            self.embedding_provider = OpenAICompatibleEmbeddingProvider(
+                api_key=self.config.api_key,
+                model_name=self.config.model_name,
+                dimension=self.config.dimension,
+                api_base=self.config.api_base,
+            )
+        else:
+            self.embedding_provider = MockEmbeddingProvider(
+                model_name=self.config.model_name,
+                dimension=self.config.dimension,
+            )
+
+        # Retrieval Strategies
+        self.keyword_retriever = KeywordRetriever(self.fts_index)
+        self.semantic_retriever = SemanticRetriever(
+            embedding_provider=self.embedding_provider,
+            vector_storage=self.vector_storage,
+            chunk_map=self.chunk_map,
+        )
+        self.hybrid_retriever = HybridRetriever(
+            [self.keyword_retriever, self.semantic_retriever]
+        )
+
+    def index_repository(
+        self, repo_path: str, enable_semantic: bool | None = None
+    ) -> int:
         """
         Parse and index an entire local repository.
 
-        Args:
-            repo_path: Path to repository root directory.
-
-        Returns:
-            Number of CodeChunks indexed.
+        Keyword indexing ALWAYS runs.
+        Semantic embedding generation runs if enabled (or if config.semantic_enabled is True).
         """
+        should_embed = (
+            enable_semantic if enable_semantic is not None else self.config.semantic_enabled
+        )
+
         parse_res = parse_repository(repo_path)
         repo_root = Path(parse_res.repository_path)
 
         all_chunks: list[CodeChunk] = []
-
         for parsed_file in parse_res.files:
             file_chunks = chunk_parsed_file(parsed_file, repo_root)
             all_chunks.extend(file_chunks)
 
+        # Update in-memory chunk map
+        self.chunk_map = {c.chunk_id: c for c in all_chunks}
+        self.semantic_retriever.set_chunk_map(self.chunk_map)
+
+        # 1. Keyword FTS Indexing (Always executes)
         self.fts_index.clear()
         self.fts_index.index_chunks(all_chunks)
+
+        # 2. Semantic Embedding Generation (Executes if enabled)
+        if should_embed:
+            self._generate_and_store_embeddings(all_chunks)
+
         return len(all_chunks)
 
-    def search(self, raw_query: str, top_k: int = DEFAULT_TOP_K) -> SearchResponse:
+    def _generate_and_store_embeddings(self, chunks: list[CodeChunk]):
         """
-        Execute search query with normalization, top_k validation, and deduplication.
+        Generate and persist embeddings for chunks, using embedding cache to avoid re-embedding.
+        Embedding errors are caught safely without corrupting keyword index.
+        """
+        for chunk in chunks:
+            text = chunk.code_content
+            mname = self.embedding_provider.model_name
+            dim = self.embedding_provider.dimension
+
+            # Check cache first
+            cached_vec = self.vector_storage.get_cached_embedding(text, mname)
+            if cached_vec and len(cached_vec) == dim:
+                self.vector_storage.store_chunk_embedding(
+                    chunk.chunk_id, mname, dim, cached_vec
+                )
+                continue
+
+            # Generate new embedding
+            try:
+                vec = self.embedding_provider.embed_text(text)
+                self.vector_storage.cache_embedding(text, mname, vec)
+                self.vector_storage.store_chunk_embedding(
+                    chunk.chunk_id, mname, dim, vec
+                )
+            except EmbeddingError:
+                # Catch embedding provider failures safely — keyword index remains intact
+                continue
+            except Exception:
+                continue
+
+    def search(
+        self,
+        raw_query: str,
+        mode: str = "auto",
+        top_k: int = DEFAULT_TOP_K,
+    ) -> SearchResponse:
+        """
+        Execute search query across keyword, semantic, or hybrid strategies.
 
         Args:
             raw_query: Raw search query string.
-            top_k: Number of top matching chunks to return.
-
-        Returns:
-            SearchResponse containing query, total matches, and list of SearchResult items.
+            mode: "auto" | "keyword" | "semantic" | "hybrid"
+            top_k: Maximum results to return.
         """
         normalized = normalize_query(raw_query)
 
@@ -86,7 +171,21 @@ class RetrievalService:
                 results=[],
             )
 
-        raw_results = self.hybrid_retriever.retrieve(normalized, top_k=effective_top_k)
+        # Determine strategy to execute
+        mode_lower = mode.lower()
+        if mode_lower == "keyword":
+            raw_results = self.keyword_retriever.retrieve(normalized, top_k=effective_top_k)
+        elif mode_lower == "semantic":
+            raw_results = self.semantic_retriever.retrieve(normalized, top_k=effective_top_k)
+        elif mode_lower == "hybrid":
+            raw_results = self.hybrid_retriever.retrieve(normalized, top_k=effective_top_k)
+        else:
+            # "auto" mode: use hybrid if semantic embeddings exist, else keyword
+            if self.config.semantic_enabled:
+                raw_results = self.hybrid_retriever.retrieve(normalized, top_k=effective_top_k)
+            else:
+                raw_results = self.keyword_retriever.retrieve(normalized, top_k=effective_top_k)
+
         deduped_results = deduplicate_search_results(raw_results)[:effective_top_k]
 
         return SearchResponse(
@@ -98,6 +197,7 @@ class RetrievalService:
     def close(self):
         """Close storage resources."""
         self.fts_index.close()
+        self.vector_storage.close()
 
 
 # Backward-compatible alias for existing imports
