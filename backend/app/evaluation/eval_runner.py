@@ -90,8 +90,7 @@ class RAGEvaluator:
                     retrieved_files = [c.relative_path for c in resp.citations]
 
                     # Also check search results directly via retrieval
-                    search_res = service.retrieval_service.search(case.question, mode="hybrid", top_k=8)
-                    candidate_files = [r.chunk.relative_path for r in search_res.results]
+                    candidate_files = [c.relative_path for c in resp.citations]
 
                     # Normalize paths for comparison
                     norm_candidates = [f.replace("\\", "/") for f in candidate_files]

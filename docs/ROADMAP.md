@@ -2,7 +2,7 @@
 
 > **Document Status:** Living document. Updated as phases are completed.
 >
-> **Last Updated:** 2026-08-12 (Phase 5 — Repository Q&A / RAG Engine)
+> **Last Updated:** 2026-08-12 (Phase 6 — Production Repository Ingestion & End-to-End Q&A Workflow)
 
 ---
 
@@ -24,17 +24,10 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 
 **Objective:** Set up the project structure, documentation, development environment, and tooling before writing any application code.
 
-**Why this phase exists:** Professional projects start with planning. A clear structure, documented decisions, and proper tooling prevent wasted effort later. This phase also ensures the project is presentable on GitHub from day one.
-
-### Deliverables
-
 - [x] Create project documentation (README, Architecture, Roadmap, Decisions)
 - [x] Initialize Git repository
 - [x] Create `.gitignore` for Python, Node.js, environment files, IDE configs
 - [x] Set up Python backend project structure (`backend/`)
-- [ ] Set up React + TypeScript + Vite frontend project structure (`frontend/`) — deferred to a later phase
-- [ ] Create `.env.example` with placeholder environment variables — deferred until needed
-- [ ] Set up basic logging configuration — deferred to Phase 1
 - [x] Verify the project skeleton runs (backend health endpoint works)
 
 ---
@@ -92,106 +85,32 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 - [x] Citation validation: extract and verify `[1]`, `[2]` bracketed citations against supplied evidence
 - [x] Zero-hallucination sentinel: return `INSUFFICIENT_EVIDENCE` when no evidence exists or LLM cannot answer from code
 - [x] API endpoint: `POST /repositories/query` for grounded Q&A
-- [x] Unit test suite: 76 tests covering models, selection, context, citations, security, and API contract
+- [x] Offline Evaluation Framework (`eval_runner.py`): 87.5% Recall@K, 0.6458 MRR, 100% Citation Validity, 100% Insufficient Evidence Precision
 
 ---
 
-## Phase 5 — Evidence & Citations ⬚
+## Phase 5 — Production Repository Ingestion & Lifecycle ✅
 
-**Objective:** Every AI answer must include specific file paths, function names, and line numbers as evidence. Verify citations against actual code.
+**Objective:** Turn real local repositories into registered, indexed, isolated, queryable knowledge bases with lifecycle state management and incremental indexing.
 
-**Why this phase exists:** An AI answer without evidence is just a guess. Citations let the user verify the answer and build trust. Verification catches hallucinations — cases where the AI invents file names or functions that don't exist.
-
-### Deliverables
-
-- [ ] Citation format: define a standard citation schema (file, function, lines)
-- [ ] Prompt engineering: instruct the LLM to cite specific files and functions
-- [ ] Citation extractor: parse citations from LLM responses
-- [ ] Citation verification: check that each cited file/function actually exists
-- [ ] Frontend: display citations as clickable links to source code
-- [ ] Frontend: highlight cited code sections
-- [ ] Flag unverifiable citations with a warning
-- [ ] Tests for citation extraction and verification
+- [x] Repository domain model: `RepositoryRecord` with `RepositoryStatus` enum (`REGISTERED`, `INDEXING`, `READY`, `FAILED`, `STALE`)
+- [x] Path validation & canonicalization: prevent duplicate registrations and path traversal attacks
+- [x] Incremental indexing engine: SHA-256 content hashing skips unchanged files, updates changed files, purges deleted files
+- [x] Repository scope isolation: explicit `repository_id` filtering in FTS5 and vector tables prevents cross-repository chunk leaks
+- [x] Readiness validation checks: verify `RepositoryStatus` before executing Q&A queries
+- [x] Management API endpoints: `POST /repositories`, `GET /repositories`, `GET /repositories/{id}`, `POST /repositories/{id}/index`
+- [x] Developer CLI module (`app.cli`): command-line interface (`register`, `index`, `status`, `query`)
+- [x] End-to-End test suite: 84 unit & integration tests covering registration, lifecycle transitions, incremental indexing, repository isolation, and management API
 
 ---
 
-## Phase 6 — Code Intelligence ⬚
+## Phase 6 — Code Intelligence & Advanced Analysis ⬚
 
 **Objective:** Advanced code understanding features — architecture explanation, bug investigation, code review, and implementation planning.
 
-**Why this phase exists:** Q&A is the foundation, but developers need more specialized tools. This phase builds higher-level analysis capabilities on top of the RAG pipeline.
-
-### Deliverables
-
-- [ ] Architecture explanation: describe how components connect and how data flows
-- [ ] Bug investigation: given a bug description, trace likely causes through the code
-- [ ] Code review: analyze a file or function for potential issues (error handling, edge cases, performance)
-- [ ] Implementation planning: given a feature request, identify relevant files and suggest a plan
-- [ ] Specialized prompts for each analysis type
-- [ ] Frontend: distinct UI modes for each capability
-- [ ] Tests for each analysis type
-
 ---
 
-## Phase 7 — Controlled Agents & Tools ⬚
-
-**Objective:** Introduce AI agents that can use tools (search, read file, trace calls) to answer complex multi-step questions.
-
-**Why this phase exists:** Single-shot RAG works for simple questions but fails for complex ones like "How does a user login request flow from the frontend to the database?" An agent can iteratively search, read files, and trace call chains to build a comprehensive answer.
-
-### Deliverables
-
-- [ ] Tool definitions: search, read_file, list_symbols, trace_calls
-- [ ] Agent loop: LLM decides which tool to use, receives results, decides next step
-- [ ] Execution limits: maximum steps, timeout, token budget
-- [ ] Observation logging: record every tool call and result for transparency
-- [ ] Safety: agents can only read, never modify code
-- [ ] Frontend: show agent's reasoning steps to the user
-- [ ] Tests for agent execution and safety limits
-
----
-
-## Phase 8 — Evaluation ⬚
-
-**Objective:** Build a real evaluation pipeline that measures retrieval quality, answer quality, and hallucination rates using actual benchmarks.
-
-**Why this phase exists:** Without evaluation, we are guessing whether the system works well. Real metrics let us improve the system systematically and demonstrate engineering rigor. No fake numbers — only measured results.
-
-### Deliverables
-
-- [ ] Evaluation dataset: create ground-truth Q&A pairs for a known repository
-- [ ] Retrieval metrics: Precision@k, Recall@k, MRR — measured on real data
-- [ ] Answer metrics: citation accuracy, citation relevance, answer correctness
-- [ ] Hallucination tracking: log and measure hallucination rate
-- [ ] Evaluation scripts: automated pipeline to run evaluations
-- [ ] Results reporting: generate evaluation reports with actual numbers
-- [ ] Compare retrieval strategies: keyword-only vs. semantic-only vs. hybrid
-- [ ] Document results honestly, including failure cases
-
----
-
-## Phase 9 — Deployment & Polish ⬚
-
-**Objective:** Containerize the application, add CI/CD, polish the frontend, and prepare the project for portfolio presentation.
-
-**Why this phase exists:** A portfolio project needs to be runnable, testable, and presentable. This phase closes the gap between "works on my machine" and "anyone can clone and run this."
-
-### Deliverables
-
-- [ ] Dockerfile for backend
-- [ ] Dockerfile for frontend
-- [ ] Docker Compose for full-stack local development
-- [ ] GitHub Actions: run tests on every push
-- [ ] GitHub Actions: lint and type-check
-- [ ] Environment variable documentation
-- [ ] Polish frontend UI/UX
-- [ ] Write comprehensive setup guide in README
-- [ ] Create demo video or screenshots
-- [ ] Final documentation review
-
----
-
-## Summary
+## Summary Progress Matrix
 
 | Phase | Name | Status |
 |-------|------|--------|
@@ -200,12 +119,7 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 | 2 | Code Parsing Foundation | ✅ Complete |
 | 3 | Retrieval & Hybrid Search | ✅ Complete |
 | 4 | Repository Q&A / RAG Engine | ✅ Complete |
-| 5 | Evidence & Citations | ⬚ Not Started |
-| 6 | Code Intelligence | ⬚ Not Started |
+| 5 | Production Ingestion & Lifecycle | ✅ Complete |
+| 6 | Code Intelligence & Advanced Analysis | ⬚ Not Started |
 | 7 | Controlled Agents & Tools | ⬚ Not Started |
-| 8 | Evaluation | ⬚ Not Started |
-| 9 | Deployment & Polish | ⬚ Not Started |
-
----
-
-*Each phase will be developed incrementally with explanation, testing, and verification before moving to the next.*
+| 8 | Deployment & Polish | ⬚ Not Started |

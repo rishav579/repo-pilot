@@ -1,64 +1,118 @@
 """
-Repository Scan API Router
+Repository Management API Router
 
-WHY A SEPARATE ROUTER?
-    FastAPI lets you organize endpoints into "routers" — separate files
-    that handle related endpoints. This keeps main.py clean.
-
-    Instead of putting every endpoint in main.py (which would become huge),
-    we create a router for each feature area:
-    - /repositories/* → handled by this router
-    - /health → stays in main.py (it's a global endpoint)
-
-    The router is then "included" into the main app in main.py.
+Endpoints:
+- POST /repositories : Register a local repository.
+- GET /repositories : List all registered repositories.
+- GET /repositories/{repository_id} : Get status record for a repository.
+- POST /repositories/{repository_id}/index : Trigger repository indexing.
+- POST /repositories/scan : (Backward-compatible) Scan a local directory.
 """
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.ingestion.models import ScanSummary
 from app.services.ingestion.scanner import ScannerError, scan_repository
+from app.services.repository.models import IndexingSummary, RepositoryRecord, RepositoryRegistrationRequest
+from app.services.repository.service import RepositoryService
 
-
-# Create a router with a prefix — all endpoints in this router
-# will start with /repositories
 router = APIRouter(
     prefix="/repositories",
-    tags=["repositories"],  # Groups endpoints in the API docs
+    tags=["repositories"],
 )
 
+DEFAULT_DB_PATH = ".repopilot_data.db"
+_shared_service: RepositoryService | None = None
 
-class ScanRequest(BaseModel):
-    """
-    Request body for the scan endpoint.
 
-    The client sends a JSON body like:
-        {"path": "/path/to/repository"}
+def get_repository_service() -> RepositoryService:
+    """Get or initialize the shared RepositoryService instance for API endpoints."""
+    global _shared_service
+    if _shared_service is None:
+        _shared_service = RepositoryService(db_path=DEFAULT_DB_PATH)
+    return _shared_service
 
-    Pydantic validates that 'path' is present and is a string.
-    """
 
+def set_repository_service(service: RepositoryService | None):
+    """Set custom service instance (useful for unit tests)."""
+    global _shared_service
+    _shared_service = service
+
+
+class DirectoryScanRequest(BaseModel):
     path: str
+    require_git: bool = False
 
 
-@router.post("/scan", response_model=ScanSummary)
-def scan_repository_endpoint(request: ScanRequest):
+class TriggerIndexRequest(BaseModel):
+    enable_semantic: bool | None = None
+
+
+@router.post("", response_model=RepositoryRecord)
+def register_repository_endpoint(request: RepositoryRegistrationRequest):
     """
-    Scan a local repository and return a summary of discovered files.
+    Validate and register a local repository directory.
+    """
+    service = get_repository_service()
+    try:
+        record = service.register_repository(request.path)
+        return record
+    except ScannerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration error: {str(e)}")
 
-    Accepts a local directory path, validates it, walks the file tree,
-    and returns a summary including:
-    - Total files found
-    - Source vs. excluded vs. binary file counts
-    - Languages detected with file counts
-    - Total and source file sizes
 
-    Does NOT return the full file list (to keep the response small).
+@router.get("", response_model=list[RepositoryRecord])
+def list_repositories_endpoint():
+    """
+    List all registered repositories with their lifecycle status and metrics.
+    """
+    service = get_repository_service()
+    return service.list_repositories()
+
+
+@router.get("/{repository_id}", response_model=RepositoryRecord)
+def get_repository_status_endpoint(repository_id: str):
+    """
+    Get repository record and current lifecycle status.
+    """
+    service = get_repository_service()
+    record = service.get_repository(repository_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+    return record
+
+
+@router.post("/{repository_id}/index", response_model=IndexingSummary)
+def trigger_indexing_endpoint(repository_id: str, request: TriggerIndexRequest | None = None):
+    """
+    Trigger scanning, AST parsing, chunking, and indexing for a registered repository.
+    """
+    service = get_repository_service()
+    try:
+        enable_semantic = request.enable_semantic if request else None
+        summary = service.index_repository(repository_id, enable_semantic=enable_semantic)
+        if summary.status.value == "failed":
+            raise HTTPException(status_code=500, detail=f"Indexing failed: {summary.error_message}")
+        return summary
+    except ScannerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Indexing error: {str(e)}")
+
+
+@router.post("/scan")
+def scan_directory_endpoint(request: DirectoryScanRequest):
+    """
+    (Backward-compatible) Scan a repository path and return file inventory.
     """
     try:
-        result = scan_repository(request.path, require_git=False)
-        return result.summary
+        result = scan_repository(request.path, require_git=request.require_git)
+        return result
     except ScannerError as e:
-        # Return a 400 Bad Request with the error message.
-        # HTTP 400 means "the client sent a bad request" (e.g., invalid path).
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scanning error: {str(e)}")

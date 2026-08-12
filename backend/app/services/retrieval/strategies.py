@@ -25,11 +25,11 @@ class KeywordRetriever(BaseRetriever):
     def __init__(self, fts_index: SQLiteFTSIndex):
         self.fts_index = fts_index
 
-    def retrieve(self, query: str, top_k: int = 10) -> list[SearchResult]:
+    def retrieve(self, query: str, repository_id: str | None = None, top_k: int = 10) -> list[SearchResult]:
         """
         Execute BM25 keyword search via FTS5 index.
         """
-        return self.fts_index.search(query, top_k=top_k)
+        return self.fts_index.search(query, repository_id=repository_id, top_k=top_k)
 
 
 class SemanticRetriever(BaseRetriever):

@@ -23,6 +23,7 @@ class CodeChunk(BaseModel):
     """
 
     chunk_id: str
+    repository_id: str = "default"
     relative_path: str
     language: str
     start_line: int

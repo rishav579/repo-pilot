@@ -36,13 +36,15 @@ class RetrievalService:
         db_path: str = ":memory:",
         config: RetrievalConfig | None = None,
         embedding_provider: BaseEmbeddingProvider | None = None,
+        fts_index: SQLiteFTSIndex | None = None,
+        vector_storage: SQLiteVectorStorage | None = None,
     ):
         self.config = config or RetrievalConfig.from_env()
         self.db_path = db_path
 
         # Database storage instances
-        self.fts_index = SQLiteFTSIndex(db_path=db_path)
-        self.vector_storage = SQLiteVectorStorage(db_path=db_path)
+        self.fts_index = fts_index or SQLiteFTSIndex(db_path=db_path)
+        self.vector_storage = vector_storage or SQLiteVectorStorage(db_path=db_path)
 
         # In-memory chunk mapping
         self.chunk_map: dict[str, CodeChunk] = {}
@@ -143,6 +145,7 @@ class RetrievalService:
     def search(
         self,
         raw_query: str,
+        repository_id: str | None = None,
         mode: str = "auto",
         top_k: int = DEFAULT_TOP_K,
     ) -> SearchResponse:
@@ -151,6 +154,7 @@ class RetrievalService:
 
         Args:
             raw_query: Raw search query string.
+            repository_id: Optional repository ID filter.
             mode: "auto" | "keyword" | "semantic" | "hybrid"
             top_k: Maximum results to return.
         """
@@ -174,7 +178,9 @@ class RetrievalService:
         # Determine strategy to execute
         mode_lower = mode.lower()
         if mode_lower == "keyword":
-            raw_results = self.keyword_retriever.retrieve(normalized, top_k=effective_top_k)
+            raw_results = self.keyword_retriever.retrieve(
+                normalized, repository_id=repository_id, top_k=effective_top_k
+            )
         elif mode_lower == "semantic":
             raw_results = self.semantic_retriever.retrieve(normalized, top_k=effective_top_k)
         elif mode_lower == "hybrid":
@@ -184,7 +190,16 @@ class RetrievalService:
             if self.config.semantic_enabled:
                 raw_results = self.hybrid_retriever.retrieve(normalized, top_k=effective_top_k)
             else:
-                raw_results = self.keyword_retriever.retrieve(normalized, top_k=effective_top_k)
+                raw_results = self.keyword_retriever.retrieve(
+                    normalized, repository_id=repository_id, top_k=effective_top_k
+                )
+
+        # If repository_id specified, filter results to match repository_id
+        if repository_id:
+            raw_results = [
+                r for r in raw_results
+                if getattr(r.chunk, "repository_id", "default") in (repository_id, "default")
+            ]
 
         deduped_results = deduplicate_search_results(raw_results)[:effective_top_k]
 

@@ -33,6 +33,7 @@ class SQLiteFTSIndex:
                 """
                 CREATE VIRTUAL TABLE IF NOT EXISTS code_chunks_fts USING fts5(
                     chunk_id UNINDEXED,
+                    repository_id UNINDEXED,
                     relative_path UNINDEXED,
                     language UNINDEXED,
                     symbol_name,
@@ -48,10 +49,15 @@ class SQLiteFTSIndex:
                 """
             )
 
-    def clear(self):
-        """Clear all indexed chunks from the database."""
+    def clear(self, repository_id: str | None = None):
+        """Clear indexed chunks from the database for a specific repo or all repos."""
         with self.conn:
-            self.conn.execute("DELETE FROM code_chunks_fts;")
+            if repository_id:
+                self.conn.execute(
+                    "DELETE FROM code_chunks_fts WHERE repository_id = ?;", (repository_id,)
+                )
+            else:
+                self.conn.execute("DELETE FROM code_chunks_fts;")
 
     def index_chunks(self, chunks: list[CodeChunk]):
         """
@@ -60,13 +66,14 @@ class SQLiteFTSIndex:
         rows = [
             (
                 c.chunk_id,
+                getattr(c, "repository_id", "default"),
                 c.relative_path,
                 c.language,
                 c.symbol_name or "",
                 c.symbol_kind or "",
                 c.parent_name or "",
-                c.start_line,
-                c.end_line,
+                str(c.start_line),
+                str(c.end_line),
                 c.signature or "",
                 c.docstring or "",
                 c.code_content,
@@ -78,20 +85,21 @@ class SQLiteFTSIndex:
             self.conn.executemany(
                 """
                 INSERT INTO code_chunks_fts (
-                    chunk_id, relative_path, language, symbol_name,
+                    chunk_id, repository_id, relative_path, language, symbol_name,
                     symbol_kind, parent_name, start_line, end_line,
                     signature, docstring, code_content
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 rows,
             )
 
-    def search(self, query_text: str, top_k: int = 10) -> list[SearchResult]:
+    def search(self, query_text: str, repository_id: str | None = None, top_k: int = 10) -> list[SearchResult]:
         """
-        Perform a deterministic BM25 keyword search over indexed chunks.
+        Search indexed code chunks using BM25 keyword matching.
 
         Args:
-            query_text: Natural language or keyword search query (e.g. "health_check", "scanner").
+            query_text: User search query.
+            repository_id: Optional repository_id filter.
             top_k: Maximum number of results to return.
 
         Returns:
@@ -103,7 +111,8 @@ class SQLiteFTSIndex:
 
         STOP_WORDS = {
             "where", "is", "the", "in", "a", "an", "how", "what", "which",
-            "are", "of", "to", "for", "on", "with", "does", "do", "it", "be"
+            "are", "of", "to", "for", "on", "with", "does", "do", "it", "be",
+            "defined", "implemented"
         }
         all_tokens = re.findall(r"\w+", clean_query)
         if not all_tokens:
@@ -119,28 +128,26 @@ class SQLiteFTSIndex:
 
         cursor = self.conn.cursor()
         try:
-            cursor.execute(
-                """
-                SELECT
-                    chunk_id, relative_path, language, symbol_name,
-                    symbol_kind, parent_name, start_line, end_line,
-                    signature, docstring, code_content,
-                    bm25(code_chunks_fts) as rank_score
-                FROM code_chunks_fts
-                WHERE code_chunks_fts MATCH ?
-                ORDER BY rank_score ASC
-                LIMIT ?;
-                """,
-                (fts_query, top_k),
-            )
-            rows = cursor.fetchall()
-        except sqlite3.OperationalError:
-            # If MATCH syntax fails on edge case tokens, fallback to simple phrase match
-            try:
+            if repository_id:
                 cursor.execute(
                     """
                     SELECT
-                        chunk_id, relative_path, language, symbol_name,
+                        chunk_id, repository_id, relative_path, language, symbol_name,
+                        symbol_kind, parent_name, start_line, end_line,
+                        signature, docstring, code_content,
+                        bm25(code_chunks_fts) as rank_score
+                    FROM code_chunks_fts
+                    WHERE code_chunks_fts MATCH ? AND repository_id = ?
+                    ORDER BY rank_score ASC
+                    LIMIT ?;
+                    """,
+                    (fts_query, repository_id, top_k),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        chunk_id, repository_id, relative_path, language, symbol_name,
                         symbol_kind, parent_name, start_line, end_line,
                         signature, docstring, code_content,
                         bm25(code_chunks_fts) as rank_score
@@ -149,8 +156,42 @@ class SQLiteFTSIndex:
                     ORDER BY rank_score ASC
                     LIMIT ?;
                     """,
-                    (f'"{clean_query}"*', top_k),
+                    (fts_query, top_k),
                 )
+            rows = cursor.fetchall()
+        except sqlite3.OperationalError:
+            # If MATCH syntax fails on edge case tokens, fallback to simple phrase match
+            try:
+                if repository_id:
+                    cursor.execute(
+                        """
+                        SELECT
+                            chunk_id, repository_id, relative_path, language, symbol_name,
+                            symbol_kind, parent_name, start_line, end_line,
+                            signature, docstring, code_content,
+                            bm25(code_chunks_fts) as rank_score
+                        FROM code_chunks_fts
+                        WHERE code_chunks_fts MATCH ? AND repository_id = ?
+                        ORDER BY rank_score ASC
+                        LIMIT ?;
+                        """,
+                        (f'"{clean_query}"*', repository_id, top_k),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT
+                            chunk_id, repository_id, relative_path, language, symbol_name,
+                            symbol_kind, parent_name, start_line, end_line,
+                            signature, docstring, code_content,
+                            bm25(code_chunks_fts) as rank_score
+                        FROM code_chunks_fts
+                        WHERE code_chunks_fts MATCH ?
+                        ORDER BY rank_score ASC
+                        LIMIT ?;
+                        """,
+                        (f'"{clean_query}"*', top_k),
+                    )
                 rows = cursor.fetchall()
             except sqlite3.OperationalError:
                 return []
@@ -159,6 +200,7 @@ class SQLiteFTSIndex:
         for row in rows:
             chunk = CodeChunk(
                 chunk_id=row["chunk_id"],
+                repository_id=row["repository_id"] if "repository_id" in row.keys() else "default",
                 relative_path=row["relative_path"],
                 language=row["language"],
                 start_line=int(row["start_line"]),
