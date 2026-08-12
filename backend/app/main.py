@@ -17,6 +17,7 @@ What is "app.main:app"?
 
 from fastapi import FastAPI
 
+from app.api.router_parsing import router as parsing_router
 from app.api.router_repositories import router as repositories_router
 
 # Create the FastAPI application instance.
@@ -31,8 +32,10 @@ app = FastAPI(
 
 # Register API routers.
 # Each router handles a group of related endpoints.
-# The repositories router adds: POST /repositories/scan
+# - repositories router adds: POST /repositories/scan
+# - parsing router adds:      POST /repositories/parse
 app.include_router(repositories_router)
+app.include_router(parsing_router)
 
 
 @app.get("/health")

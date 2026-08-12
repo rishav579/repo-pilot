@@ -2,7 +2,7 @@
 
 > **Document Status:** Living document. Updated as phases are completed.
 >
-> **Last Updated:** 2026-08-12 (Phase 1 — Backend Foundation)
+> **Last Updated:** 2026-08-12 (Phase 3 — Code Parsing Foundation)
 
 ---
 
@@ -39,44 +39,29 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 
 ---
 
-## Phase 1 — Repository Ingestion ⬚
+## Phase 1 — Repository Ingestion Foundation ✅
 
-**Objective:** Accept a Git repository URL, clone it to the local file system, and discover all source files.
+**Objective:** Scan local repositories, catalog source files, extract metadata, and enforce exclusion rules.
 
-**Why this phase exists:** Before we can analyze code, we need to get it into our system. This phase builds the data pipeline entry point.
-
-### Deliverables
-
-- [ ] API endpoint: `POST /api/repos/ingest` accepts a Git repo URL
-- [ ] Git clone service: clones the repository to a local directory
-- [ ] File discovery: walks the cloned repo and lists all files
-- [ ] File filtering: skip binary files, vendor directories, lock files
-- [ ] Language detection: identify programming language per file
-- [ ] Database: store repository metadata and file records
-- [ ] API endpoint: `GET /api/repos/{id}/status` returns ingestion progress
-- [ ] Error handling: invalid URLs, clone failures, private repos
-- [ ] Basic tests for ingestion service
+- [x] File discovery: walks local repository and lists all files
+- [x] File filtering: skip binary files, vendor directories, lock files
+- [x] Language detection: identify programming language per file
+- [x] Configurable exclusion rules (`config.py`)
+- [x] API endpoint: `POST /repositories/scan` returns scan summary
+- [x] Unit tests for scanner service (27 tests)
 
 ---
 
-## Phase 2 — Code Parsing & Indexing ⬚
+## Phase 2 — Code Parsing Foundation ✅
 
-**Objective:** Parse source files using Tree-sitter to extract functions, classes, imports, and relationships. Build a keyword index.
+**Objective:** Parse source files using Tree-sitter to extract AST symbols (functions, classes, methods, interfaces, imports, line numbers, and signatures).
 
-**Why this phase exists:** Raw source files are not searchable in a meaningful way. Parsing extracts structured information (symbols, relationships) that enables intelligent search and analysis.
-
-### Deliverables
-
-- [ ] Tree-sitter integration: parse Python files (start with one language)
-- [ ] Symbol extraction: functions, classes, methods with names, line ranges, docstrings
-- [ ] Import extraction: what each file imports and from where
-- [ ] Relationship mapping: which symbols call or reference other symbols
-- [ ] Database: store symbols, relationships, and parsed content
-- [ ] Keyword index: BM25 or full-text search over code content and symbol names
-- [ ] API endpoint: `GET /api/repos/{id}/symbols` returns parsed symbols
-- [ ] API endpoint: `GET /api/repos/{id}/structure` returns file tree
-- [ ] Add support for JavaScript/TypeScript parsing
-- [ ] Tests for parser and indexer
+- [x] Tree-sitter integration: parse Python, JavaScript, and TypeScript
+- [x] Symbol extraction: functions, classes, methods, interfaces with names, line ranges, docstrings
+- [x] Import extraction: module names and import statements
+- [x] Line number accuracy: 1-indexed start and end line ranges
+- [x] API endpoint: `POST /repositories/parse` returns extracted symbols
+- [x] Unit tests for parser service (10 parser tests, 37 total suite tests)
 
 ---
 
@@ -219,8 +204,8 @@ RepoPilot is developed in **10 phases**, each building on the previous one. Ever
 | Phase | Name | Status |
 |-------|------|--------|
 | 0 | Foundation | ✅ Complete |
-| 1 | Repository Ingestion | ⬚ Not Started |
-| 2 | Code Parsing & Indexing | ⬚ Not Started |
+| 1 | Repository Ingestion Foundation | ✅ Complete |
+| 2 | Code Parsing Foundation | ✅ Complete |
 | 3 | Retrieval | ⬚ Not Started |
 | 4 | Repository Q&A | ⬚ Not Started |
 | 5 | Evidence & Citations | ⬚ Not Started |
