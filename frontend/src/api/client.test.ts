@@ -4,14 +4,16 @@ import { api, ApiError } from "./client";
 describe("RepoPilot API Client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("should handle successful health check response", async () => {
     const mockResponse = { status: "ok" };
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+    const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
     } as Response);
+    vi.stubGlobal("fetch", mockFetch);
 
     const res = await api.getHealth();
     expect(res).toEqual({ status: "ok" });
@@ -19,18 +21,20 @@ describe("RepoPilot API Client", () => {
 
   it("should handle HTTP 400 Bad Request error detail", async () => {
     const errorBody = { detail: "Repository path does not exist" };
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+    const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: false,
       status: 400,
       statusText: "Bad Request",
       json: async () => errorBody,
     } as Response);
+    vi.stubGlobal("fetch", mockFetch);
 
     await expect(api.registerRepository("/invalid/path")).rejects.toThrow(ApiError);
   });
 
   it("should handle network connection failure gracefully", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Failed to fetch"));
+    const mockFetch = vi.fn().mockRejectedValueOnce(new Error("Failed to fetch"));
+    vi.stubGlobal("fetch", mockFetch);
 
     await expect(api.getHealth()).rejects.toThrow(
       "Network or server connection failure: Failed to fetch"
