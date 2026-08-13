@@ -256,7 +256,7 @@ class TestRetrievalAPIContract:
             assert "chunk" in first
             assert "score" in first
             assert "score_type" in first
-            assert first["score_type"] == "bm25"
+            assert first["score_type"] in ("bm25", "reranked")  # reranked after Phase 7
             c = first["chunk"]
             assert "relative_path" in c
             assert "start_line" in c

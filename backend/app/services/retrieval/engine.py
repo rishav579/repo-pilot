@@ -20,6 +20,7 @@ from app.services.retrieval.embeddings.mock import MockEmbeddingProvider
 from app.services.retrieval.embeddings.openai import OpenAICompatibleEmbeddingProvider
 from app.services.retrieval.models import CodeChunk, SearchResponse, SearchResult
 from app.services.retrieval.normalizer import normalize_query
+from app.services.retrieval.reranker import CodeAwareReranker, CodeAwareRerankerConfig
 from app.services.retrieval.strategies import HybridRetriever, KeywordRetriever, SemanticRetriever
 
 DEFAULT_TOP_K = 10
@@ -38,6 +39,7 @@ class RetrievalService:
         embedding_provider: BaseEmbeddingProvider | None = None,
         fts_index: SQLiteFTSIndex | None = None,
         vector_storage: SQLiteVectorStorage | None = None,
+        reranker_config: CodeAwareRerankerConfig | None = None,
     ):
         self.config = config or RetrievalConfig.from_env()
         self.db_path = db_path
@@ -75,6 +77,10 @@ class RetrievalService:
         self.hybrid_retriever = HybridRetriever(
             [self.keyword_retriever, self.semantic_retriever]
         )
+
+        # Code-Aware Reranker (Phase 7)
+        self.reranker_config = reranker_config or CodeAwareRerankerConfig()
+        self.reranker = CodeAwareReranker(config=self.reranker_config)
 
     def index_repository(
         self, repo_path: str, enable_semantic: bool | None = None
@@ -175,23 +181,30 @@ class RetrievalService:
                 results=[],
             )
 
+        # Determine candidate pool size for reranking
+        # Fetch more candidates than final top_k so the reranker has room to promote
+        candidate_k = max(
+            effective_top_k * self.reranker_config.candidate_pool_multiplier,
+            self.reranker_config.min_candidate_pool,
+        )
+
         # Determine strategy to execute
         mode_lower = mode.lower()
         if mode_lower == "keyword":
             raw_results = self.keyword_retriever.retrieve(
-                normalized, repository_id=repository_id, top_k=effective_top_k
+                normalized, repository_id=repository_id, top_k=candidate_k
             )
         elif mode_lower == "semantic":
-            raw_results = self.semantic_retriever.retrieve(normalized, top_k=effective_top_k)
+            raw_results = self.semantic_retriever.retrieve(normalized, top_k=candidate_k)
         elif mode_lower == "hybrid":
-            raw_results = self.hybrid_retriever.retrieve(normalized, top_k=effective_top_k)
+            raw_results = self.hybrid_retriever.retrieve(normalized, top_k=candidate_k)
         else:
             # "auto" mode: use hybrid if semantic embeddings exist, else keyword
             if self.config.semantic_enabled:
-                raw_results = self.hybrid_retriever.retrieve(normalized, top_k=effective_top_k)
+                raw_results = self.hybrid_retriever.retrieve(normalized, top_k=candidate_k)
             else:
                 raw_results = self.keyword_retriever.retrieve(
-                    normalized, repository_id=repository_id, top_k=effective_top_k
+                    normalized, repository_id=repository_id, top_k=candidate_k
                 )
 
         # If repository_id specified, filter results to match repository_id
@@ -201,12 +214,17 @@ class RetrievalService:
                 if getattr(r.chunk, "repository_id", "default") in (repository_id, "default")
             ]
 
-        deduped_results = deduplicate_search_results(raw_results)[:effective_top_k]
+        deduped_results = deduplicate_search_results(raw_results)
+
+        # Apply code-aware reranking (Phase 7)
+        reranked_results = self.reranker.rerank(
+            normalized, deduped_results, top_k=effective_top_k
+        )
 
         return SearchResponse(
             query=normalized,
-            total_matches=len(deduped_results),
-            results=deduped_results,
+            total_matches=len(reranked_results),
+            results=reranked_results,
         )
 
     def close(self):

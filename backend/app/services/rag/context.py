@@ -47,15 +47,22 @@ class ContextBuilder:
                 "CONTENT:\n"
             )
             content_str = chunk.code_content.strip()
-            block_str = f"{header}{content_str}\n\n"
+            header_len = len(header)
+            available_budget = self.max_context_chars - current_len - header_len - 2
 
-            block_len = len(block_str)
-            if current_len + block_len > self.max_context_chars:
-                # Truncate remaining evidence if budget exceeded
+            if available_budget <= 100:
                 truncated = True
                 break
 
-            current_len += block_len
+            if len(content_str) > available_budget:
+                content_str = (
+                    content_str[:available_budget]
+                    + "\n... [TRUNCATED DUE TO CONTEXT BUDGET]"
+                )
+                truncated = True
+
+            block_str = f"{header}{content_str}\n\n"
+            current_len += len(block_str)
             text_parts.append(block_str)
             blocks.append(
                 ContextBlock(
@@ -68,6 +75,9 @@ class ContextBuilder:
                     formatted_content=block_str,
                 )
             )
+
+            if current_len >= self.max_context_chars:
+                break
 
         assembled_text = "".join(text_parts).strip()
         return assembled_text, blocks, truncated

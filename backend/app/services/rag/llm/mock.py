@@ -33,7 +33,11 @@ class MockLLMProvider(BaseLLMProvider):
         self, prompt: str, system_instruction: str = "", temperature: float = 0.2
     ) -> str:
         """Generate deterministic grounded response based on context evidence blocks."""
-        if "NO EVIDENCE RETRIEVED" in prompt or not prompt:
+        if (
+            "<untrusted_retrieved_evidence>\nNO EVIDENCE RETRIEVED\n</untrusted_retrieved_evidence>"
+            in prompt
+            or not prompt
+        ):
             return INSUFFICIENT_EVIDENCE_SENTINEL
 
         # Extract source block references like [1], [2] from prompt

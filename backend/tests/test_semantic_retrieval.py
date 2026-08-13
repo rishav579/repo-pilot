@@ -221,7 +221,7 @@ class TestHybridRetrievalIntegration:
         response = service.search("add", mode="hybrid")
         assert response.total_matches > 0
         top = response.results[0]
-        assert top.score_type == "hybrid_rrf"
+        assert top.score_type in ("hybrid_rrf", "reranked")  # reranked after Phase 7
         assert top.score > 0
 
         service.close()
@@ -237,7 +237,7 @@ class TestHybridRetrievalIntegration:
         assert kw_resp.total_matches > 0
         assert sem_resp.total_matches > 0
 
-        assert kw_resp.results[0].score_type == "bm25"
-        assert sem_resp.results[0].score_type == "cosine_similarity"
+        assert kw_resp.results[0].score_type in ("bm25", "reranked")  # reranked after Phase 7
+        assert sem_resp.results[0].score_type in ("cosine_similarity", "reranked")  # reranked after Phase 7
 
         service.close()

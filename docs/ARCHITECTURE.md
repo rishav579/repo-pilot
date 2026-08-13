@@ -221,13 +221,13 @@ graph TB
 | Keyword Search | BM25 or similar text search over code and symbol names |
 | Semantic Search | Vector similarity search over code embeddings |
 | Hybrid Merger | Combine keyword and semantic results with configurable weights |
-| Reranker | (Optional) Re-score combined results for higher precision |
+| Reranker | Deterministic code-aware reranking using query signals (symbol, filename, route, signature, docstring) |
 
-**Why hybrid retrieval?**
+**Why hybrid retrieval + code-aware reranking?**
 - Keyword search is good at finding exact names (function names, variable names, error messages)
 - Semantic search is good at finding conceptually related code (even if wording differs)
-- Combining both gives significantly better results than either alone
-- Reranking further improves precision by using a cross-encoder model
+- Combining both via RRF (Reciprocal Rank Fusion) merges distinct relevance signals
+- Deterministic code-aware reranking extracts structured code signals (identifiers, filenames, routes, signatures, docstrings) to boost high-precision code matches without adding heavyweight ML dependencies or network latency
 
 ### 7. AI / LLM Layer
 
