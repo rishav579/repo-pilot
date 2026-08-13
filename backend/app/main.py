@@ -22,14 +22,29 @@ from app.api.router_rag import router as rag_router
 from app.api.router_repositories import router as repositories_router
 from app.api.router_retrieval import router as retrieval_router
 
+from fastapi.middleware.cors import CORSMiddleware
+
 # Create the FastAPI application instance.
-# - title: shown in the auto-generated API docs at /docs
-# - description: also shown in the API docs
-# - version: the current API version
 app = FastAPI(
     title="RepoPilot",
     description="AI Software Engineering Intelligence Platform",
     version="0.1.0",
+)
+
+# Configure CORS for local development
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Register API routers.
