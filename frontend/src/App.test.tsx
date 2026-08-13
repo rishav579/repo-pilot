@@ -132,8 +132,9 @@ describe("RepoPilot UI Components", () => {
 
     expect(screen.getByText("[1]")).toBeDefined();
     expect(
-      screen.getByText("backend/app/services/ingestion/scanner.py (L55-L88)")
+      screen.getByText(/backend\/app\/services\/ingestion\/scanner\.py/)
     ).toBeDefined();
+    expect(screen.getByText(/L55-L88/)).toBeDefined();
     expect(screen.getByText("validate_repository_path")).toBeDefined();
   });
 });
