@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { api, ApiError } from "./client";
+import { api } from "./client";
 
 describe("RepoPilot API Client", () => {
   beforeEach(() => {
@@ -29,7 +29,9 @@ describe("RepoPilot API Client", () => {
     } as Response);
     vi.stubGlobal("fetch", mockFetch);
 
-    await expect(api.registerRepository("/invalid/path")).rejects.toThrow(ApiError);
+    await expect(api.registerRepository("/invalid/path")).rejects.toThrow(
+      "Repository path does not exist"
+    );
   });
 
   it("should handle network connection failure gracefully", async () => {
