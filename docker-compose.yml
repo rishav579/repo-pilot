@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: repopilot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - REPOPILOT_HOST=0.0.0.0
+      - REPOPILOT_PORT=8000
+      - REPOPILOT_CORS_ORIGINS=http://localhost:5173,http://localhost:80,http://127.0.0.1:80
+      - SEMANTIC_RETRIEVAL_ENABLED=false
+      - EMBEDDING_PROVIDER=mock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://localhost:8000
+    container_name: repopilot-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy

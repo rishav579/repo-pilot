@@ -15,14 +15,14 @@ What is "app.main:app"?
     - ":app"     = the variable name of the FastAPI instance inside that file
 """
 
+import os
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router_parsing import router as parsing_router
 from app.api.router_rag import router as rag_router
 from app.api.router_repositories import router as repositories_router
 from app.api.router_retrieval import router as retrieval_router
-
-from fastapi.middleware.cors import CORSMiddleware
 
 # Create the FastAPI application instance.
 app = FastAPI(
@@ -31,13 +31,12 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Configure CORS for local development
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# Configure CORS dynamically from environment for local development & deployment
+cors_origins_env = os.getenv(
+    "REPOPILOT_CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:80,http://127.0.0.1:80",
+)
+origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
