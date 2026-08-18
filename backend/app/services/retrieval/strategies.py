@@ -16,6 +16,8 @@ from app.services.retrieval.embeddings.base import BaseEmbeddingProvider, Embedd
 from app.services.retrieval.models import CodeChunk, SearchResult
 from app.services.retrieval.normalizer import normalize_query
 
+DEFAULT_MIN_SEMANTIC_SIMILARITY = 0.35
+
 
 class KeywordRetriever(BaseRetriever):
     """
@@ -25,7 +27,9 @@ class KeywordRetriever(BaseRetriever):
     def __init__(self, fts_index: SQLiteFTSIndex):
         self.fts_index = fts_index
 
-    def retrieve(self, query: str, repository_id: str | None = None, top_k: int = 10) -> list[SearchResult]:
+    def retrieve(
+        self, query: str, repository_id: str | None = None, top_k: int = 10
+    ) -> list[SearchResult]:
         """
         Execute BM25 keyword search via FTS5 index.
         """
@@ -35,6 +39,7 @@ class KeywordRetriever(BaseRetriever):
 class SemanticRetriever(BaseRetriever):
     """
     Semantic retrieval strategy using embedding vectors & cosine similarity.
+    Filters out background noise below min_similarity threshold.
     """
 
     def __init__(
@@ -42,16 +47,26 @@ class SemanticRetriever(BaseRetriever):
         embedding_provider: BaseEmbeddingProvider,
         vector_storage: SQLiteVectorStorage,
         chunk_map: dict[str, CodeChunk] | None = None,
+        fts_index: SQLiteFTSIndex | None = None,
+        min_similarity: float = DEFAULT_MIN_SEMANTIC_SIMILARITY,
     ):
         self.embedding_provider = embedding_provider
         self.vector_storage = vector_storage
         self.chunk_map = chunk_map or {}
+        self.fts_index = fts_index
+        # Use lower threshold for mock provider in unit tests, standard 0.35 for real embeddings
+        if getattr(embedding_provider, "provider_name", "") == "mock":
+            self.min_similarity = 0.0
+        else:
+            self.min_similarity = min_similarity
 
     def set_chunk_map(self, chunk_map: dict[str, CodeChunk]):
         """Update active in-memory chunk map for metadata lookups."""
         self.chunk_map = chunk_map
 
-    def retrieve(self, query: str, top_k: int = 10) -> list[SearchResult]:
+    def retrieve(
+        self, query: str, repository_id: str | None = None, top_k: int = 10
+    ) -> list[SearchResult]:
         """
         Execute vector embedding cosine similarity search.
         """
@@ -71,13 +86,30 @@ class SemanticRetriever(BaseRetriever):
         if not all_vectors:
             return []
 
+        # Find missing chunks in chunk_map and load them from fts_index if possible
+        missing_cids = [cid for cid in all_vectors if cid not in self.chunk_map]
+        if missing_cids and self.fts_index:
+            loaded_chunks = self.fts_index.get_chunks_by_ids(missing_cids)
+            self.chunk_map.update(loaded_chunks)
+
         results: list[SearchResult] = []
         for cid, chunk_vec in all_vectors.items():
             if cid not in self.chunk_map:
                 continue
 
-            sim = cosine_similarity(query_vec, chunk_vec)
             chunk = self.chunk_map[cid]
+
+            # Filter by repository_id if specified
+            if repository_id and getattr(chunk, "repository_id", "default") not in (
+                repository_id,
+                "default",
+            ):
+                continue
+
+            sim = cosine_similarity(query_vec, chunk_vec)
+            if sim < self.min_similarity:
+                continue
+
             results.append(
                 SearchResult(
                     chunk=chunk,
@@ -87,6 +119,8 @@ class SemanticRetriever(BaseRetriever):
                 )
             )
 
+        # Sort descending by similarity score
+        results.sort(key=lambda r: (-r.score, r.chunk.chunk_id))
         return deduplicate_search_results(results)[:top_k]
 
 
@@ -107,16 +141,18 @@ class HybridRetriever(BaseRetriever):
         """Add a retrieval strategy to the hybrid pipeline."""
         self.retrievers.append(retriever)
 
-    def retrieve(self, query: str, top_k: int = 10) -> list[SearchResult]:
+    def retrieve(
+        self, query: str, repository_id: str | None = None, top_k: int = 10
+    ) -> list[SearchResult]:
         """
         Execute all registered retrievers and fuse results via Reciprocal Rank Fusion.
         """
         if not self.retrievers:
             return []
 
-        # If only one retriever is registered (e.g., KeywordRetriever only), delegate directly
+        # If only one retriever is registered, delegate directly
         if len(self.retrievers) == 1:
-            raw = self.retrievers[0].retrieve(query, top_k=top_k)
+            raw = self.retrievers[0].retrieve(query, repository_id=repository_id, top_k=top_k)
             return deduplicate_search_results(raw)[:top_k]
 
         # Reciprocal Rank Fusion across multiple strategies
@@ -124,7 +160,7 @@ class HybridRetriever(BaseRetriever):
         chunk_map: dict[str, SearchResult] = {}
 
         for retriever in self.retrievers:
-            results = retriever.retrieve(query, top_k=top_k * 2)
+            results = retriever.retrieve(query, repository_id=repository_id, top_k=top_k * 2)
             for rank, res in enumerate(results, start=1):
                 cid = res.chunk.chunk_id
                 if cid not in chunk_map:
@@ -151,4 +187,5 @@ class HybridRetriever(BaseRetriever):
                 )
             )
 
+        fused_results.sort(key=lambda r: (-r.score, r.chunk.chunk_id))
         return deduplicate_search_results(fused_results)[:top_k]

@@ -45,6 +45,8 @@ class RAGService:
         self.repository_service = repository_service or RepositoryService(db_path=db_path)
         self.retrieval_service = retrieval_service or RetrievalService(
             db_path=db_path,
+            config=self.repository_service.config,
+            embedding_provider=self.repository_service.embedding_provider,
             fts_index=self.repository_service.fts_index,
             vector_storage=self.repository_service.vector_storage,
         )

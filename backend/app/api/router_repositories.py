@@ -2,9 +2,10 @@
 Repository Management API Router
 
 Endpoints:
-- POST /repositories : Register a local repository.
+- POST /repositories : Register a local repository OR a public GitHub HTTPS URL.
 - GET /repositories : List all registered repositories.
 - GET /repositories/{repository_id} : Get status record for a repository.
+- DELETE /repositories/{repository_id} : Delete a repository record and purge index data.
 - POST /repositories/{repository_id}/index : Trigger repository indexing.
 - POST /repositories/scan : (Backward-compatible) Scan a local directory.
 """
@@ -51,11 +52,11 @@ class TriggerIndexRequest(BaseModel):
 @router.post("", response_model=RepositoryRecord)
 def register_repository_endpoint(request: RepositoryRegistrationRequest):
     """
-    Validate and register a local repository directory.
+    Validate and register a local repository directory OR a public GitHub HTTPS URL.
     """
     service = get_repository_service()
     try:
-        record = service.register_repository(request.path)
+        record = service.register_repository(path=request.path, github_url=request.github_url)
         return record
     except ScannerError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -82,6 +83,18 @@ def get_repository_status_endpoint(repository_id: str):
     if not record:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
     return record
+
+
+@router.delete("/{repository_id}")
+def delete_repository_endpoint(repository_id: str):
+    """
+    Delete repository record, purge index data, and clean up cloned folder if applicable.
+    """
+    service = get_repository_service()
+    success = service.delete_repository(repository_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+    return {"status": "deleted", "repository_id": repository_id}
 
 
 @router.post("/{repository_id}/index", response_model=IndexingSummary)

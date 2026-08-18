@@ -10,7 +10,7 @@ LIFECYCLE STATES:
 """
 
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RepositoryStatus(str, Enum):
@@ -37,6 +37,8 @@ class RepositoryRecord(BaseModel):
     indexed_chunk_count: int = 0
     embedding_enabled: bool = False
     error_message: str | None = None
+    source_type: str = "local"  # "local" or "github"
+    github_url: str | None = None
 
 
 class IndexingSummary(BaseModel):
@@ -60,7 +62,23 @@ class IndexingSummary(BaseModel):
 
 class RepositoryRegistrationRequest(BaseModel):
     """
-    Request payload for POST /repositories.
+    Request payload for POST /repositories supporting both local paths and public GitHub URLs.
     """
 
-    path: str = Field(description="Local filesystem path to repository root directory")
+    path: str | None = Field(
+        default=None, description="Local filesystem path to repository root directory"
+    )
+    github_url: str | None = Field(
+        default=None, description="Public GitHub repository HTTPS URL (e.g. https://github.com/owner/repo)"
+    )
+
+    @model_validator(mode="after")
+    def validate_either_path_or_github_url(self) -> "RepositoryRegistrationRequest":
+        has_path = bool(self.path and self.path.strip())
+        has_github = bool(self.github_url and self.github_url.strip())
+
+        if not has_path and not has_github:
+            raise ValueError("Either 'path' or 'github_url' must be provided for repository registration.")
+        if has_path and has_github:
+            raise ValueError("Provide either 'path' OR 'github_url', not both.")
+        return self

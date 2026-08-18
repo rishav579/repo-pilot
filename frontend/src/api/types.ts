@@ -16,6 +16,8 @@ export interface RepositoryRecord {
   indexed_chunk_count: number;
   embedding_enabled: boolean;
   error_message?: string | null;
+  source_type?: "local" | "github";
+  github_url?: string | null;
 }
 
 export interface IndexingSummary {

@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { FolderGit2, Plus, Play, RefreshCw, Database, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { FolderGit2, Plus, Play, RefreshCw, Database, CheckCircle2, AlertCircle, Clock, GitBranch, Folder } from "lucide-react";
 import type { IndexingSummary, RepositoryRecord } from "../api/types";
 
 interface RepositoryPanelProps {
   repositories: RepositoryRecord[];
   activeRepository: RepositoryRecord | null;
   onSelectRepository: (repo: RepositoryRecord) => void;
-  onRegisterRepository: (path: string) => Promise<void>;
+  onRegisterRepository: (pathOrUrl: string) => Promise<void>;
   onTriggerIndexing: (repoId: string, enableSemantic?: boolean) => Promise<IndexingSummary | void>;
   isLoading: boolean;
   error: string | null;
@@ -21,17 +21,18 @@ export const RepositoryPanel: React.FC<RepositoryPanelProps> = ({
   isLoading,
   error,
 }) => {
-  const [repoPathInput, setRepoPathInput] = useState<string>("");
+  const [sourceMode, setSourceMode] = useState<"github" | "local">("github");
+  const [repoInput, setRepoInput] = useState<string>("");
   const [enableSemantic, setEnableSemantic] = useState<boolean>(false);
   const [isRegistering, setIsRegistering] = useState<boolean>(false);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!repoPathInput.trim()) return;
+    if (!repoInput.trim()) return;
     setIsRegistering(true);
     try {
-      await onRegisterRepository(repoPathInput.trim());
-      setRepoPathInput("");
+      await onRegisterRepository(repoInput.trim());
+      setRepoInput("");
     } finally {
       setIsRegistering(false);
     }
@@ -68,27 +69,80 @@ export const RepositoryPanel: React.FC<RepositoryPanelProps> = ({
         <FolderGit2 size={16} /> Repository Ingestion
       </div>
 
+      {/* Source Type Selector Tabs */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "0.25rem",
+          backgroundColor: "var(--bg-card)",
+          padding: "0.25rem",
+          borderRadius: "0.375rem",
+          marginBottom: "0.75rem",
+          border: "1px solid var(--border-color)",
+        }}
+      >
+        <button
+          type="button"
+          className={`btn ${sourceMode === "github" ? "btn-secondary" : ""}`}
+          style={{
+            fontSize: "0.75rem",
+            padding: "0.35rem 0.5rem",
+            border: "none",
+            backgroundColor: sourceMode === "github" ? "var(--bg-input)" : "transparent",
+            color: sourceMode === "github" ? "var(--text-primary)" : "var(--text-muted)",
+          }}
+          onClick={() => {
+            setSourceMode("github");
+            setRepoInput("");
+          }}
+        >
+          <GitBranch size={12} style={{ marginRight: "4px" }} /> GitHub URL
+        </button>
+        <button
+          type="button"
+          className={`btn ${sourceMode === "local" ? "btn-secondary" : ""}`}
+          style={{
+            fontSize: "0.75rem",
+            padding: "0.35rem 0.5rem",
+            border: "none",
+            backgroundColor: sourceMode === "local" ? "var(--bg-input)" : "transparent",
+            color: sourceMode === "local" ? "var(--text-primary)" : "var(--text-muted)",
+          }}
+          onClick={() => {
+            setSourceMode("local");
+            setRepoInput("");
+          }}
+        >
+          <Folder size={12} style={{ marginRight: "4px" }} /> Local Folder
+        </button>
+      </div>
+
       {/* Register Repository Form */}
       <form onSubmit={handleRegister} className="input-group">
-        <label className="input-label" htmlFor="repo-path">
-          Local Repository Root Path
+        <label className="input-label" htmlFor="repo-input">
+          {sourceMode === "github" ? "Public GitHub Repository HTTPS URL" : "Local Repository Root Path"}
         </label>
         <input
-          id="repo-path"
+          id="repo-input"
           type="text"
           className="text-input mono-input"
-          placeholder="e.g. C:/Projects/repo-pilot"
-          value={repoPathInput}
-          onChange={(e) => setRepoPathInput(e.target.value)}
+          placeholder={
+            sourceMode === "github"
+              ? "https://github.com/rishav579/repo-pilot"
+              : "e.g. C:/Projects/repo-pilot"
+          }
+          value={repoInput}
+          onChange={(e) => setRepoInput(e.target.value)}
           disabled={isLoading || isRegistering}
         />
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={isLoading || isRegistering || !repoPathInput.trim()}
+          disabled={isLoading || isRegistering || !repoInput.trim()}
           style={{ width: "100%", marginTop: "0.25rem" }}
         >
-          <Plus size={16} /> Register Repository
+          <Plus size={16} /> {sourceMode === "github" ? "Clone & Register Repo" : "Register Repository"}
         </button>
       </form>
 
@@ -101,6 +155,7 @@ export const RepositoryPanel: React.FC<RepositoryPanelProps> = ({
             borderRadius: "0.375rem",
             color: "#f87171",
             fontSize: "0.8rem",
+            marginBottom: "0.5rem",
           }}
         >
           {error}
@@ -124,12 +179,14 @@ export const RepositoryPanel: React.FC<RepositoryPanelProps> = ({
               color: "var(--text-muted)",
             }}
           >
-            No repositories registered yet. Add a local path above to begin indexing.
+            No repositories registered yet. Enter a GitHub URL or local path above to begin.
           </div>
         ) : (
           <div className="repo-list">
             {repositories.map((repo) => {
               const isActive = activeRepository?.repository_id === repo.repository_id;
+              const isGithub = repo.source_type === "github" || repo.github_url;
+
               return (
                 <div
                   key={repo.repository_id}
@@ -137,10 +194,16 @@ export const RepositoryPanel: React.FC<RepositoryPanelProps> = ({
                   onClick={() => onSelectRepository(repo)}
                 >
                   <div className="repo-card-top">
-                    <span className="repo-name">{repo.display_name}</span>
+                    <span className="repo-name" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                      {isGithub ? <GitBranch size={12} style={{ color: "#38bdf8" }} /> : <Folder size={12} />}
+                      {repo.display_name}
+                    </span>
                     {renderStatusBadge(repo.status)}
                   </div>
-                  <div className="repo-path">{repo.canonical_path}</div>
+
+                  <div className="repo-path">
+                    {isGithub ? repo.github_url || repo.canonical_path : repo.canonical_path}
+                  </div>
 
                   <div
                     style={{

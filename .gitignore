@@ -103,3 +103,5 @@ logs/
 *.tmp
 *.temp
 .cache/
+data/
+backend/data/

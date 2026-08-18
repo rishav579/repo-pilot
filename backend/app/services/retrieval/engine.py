@@ -16,6 +16,7 @@ from app.services.parsing.parser import parse_repository
 from app.services.retrieval.config import RetrievalConfig
 from app.services.retrieval.deduplicator import deduplicate_search_results
 from app.services.retrieval.embeddings.base import BaseEmbeddingProvider, EmbeddingError
+from app.services.retrieval.embeddings.fastembed import FastEmbedEmbeddingProvider
 from app.services.retrieval.embeddings.mock import MockEmbeddingProvider
 from app.services.retrieval.embeddings.openai import OpenAICompatibleEmbeddingProvider
 from app.services.retrieval.models import CodeChunk, SearchResponse, SearchResult
@@ -54,6 +55,11 @@ class RetrievalService:
         # Embedding Provider Setup
         if embedding_provider is not None:
             self.embedding_provider = embedding_provider
+        elif self.config.provider_type == "fastembed":
+            self.embedding_provider = FastEmbedEmbeddingProvider(
+                model_name=self.config.model_name,
+                dimension=self.config.dimension,
+            )
         elif self.config.provider_type == "openai":
             self.embedding_provider = OpenAICompatibleEmbeddingProvider(
                 api_key=self.config.api_key,
@@ -73,6 +79,7 @@ class RetrievalService:
             embedding_provider=self.embedding_provider,
             vector_storage=self.vector_storage,
             chunk_map=self.chunk_map,
+            fts_index=self.fts_index,
         )
         self.hybrid_retriever = HybridRetriever(
             [self.keyword_retriever, self.semantic_retriever]
@@ -195,19 +202,25 @@ class RetrievalService:
                 normalized, repository_id=repository_id, top_k=candidate_k
             )
         elif mode_lower == "semantic":
-            raw_results = self.semantic_retriever.retrieve(normalized, top_k=candidate_k)
+            raw_results = self.semantic_retriever.retrieve(
+                normalized, repository_id=repository_id, top_k=candidate_k
+            )
         elif mode_lower == "hybrid":
-            raw_results = self.hybrid_retriever.retrieve(normalized, top_k=candidate_k)
+            raw_results = self.hybrid_retriever.retrieve(
+                normalized, repository_id=repository_id, top_k=candidate_k
+            )
         else:
             # "auto" mode: use hybrid if semantic embeddings exist, else keyword
             if self.config.semantic_enabled:
-                raw_results = self.hybrid_retriever.retrieve(normalized, top_k=candidate_k)
+                raw_results = self.hybrid_retriever.retrieve(
+                    normalized, repository_id=repository_id, top_k=candidate_k
+                )
             else:
                 raw_results = self.keyword_retriever.retrieve(
                     normalized, repository_id=repository_id, top_k=candidate_k
                 )
 
-        # If repository_id specified, filter results to match repository_id
+        # If repository_id specified, ensure filter
         if repository_id:
             raw_results = [
                 r for r in raw_results

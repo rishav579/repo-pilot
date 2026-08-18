@@ -58,11 +58,17 @@ export const api = {
   /** Check backend health endpoint */
   getHealth: (): Promise<HealthResponse> => request<HealthResponse>("/health"),
 
-  /** Register a local repository directory */
-  registerRepository: (path: string): Promise<RepositoryRecord> =>
+  /** Register a local repository directory OR a public GitHub HTTPS URL */
+  registerRepository: (input: string | { path?: string; github_url?: string }): Promise<RepositoryRecord> =>
     request<RepositoryRecord>("/repositories", {
       method: "POST",
-      body: JSON.stringify({ path }),
+      body: JSON.stringify(
+        typeof input === "string"
+          ? input.startsWith("https://github.com")
+            ? { github_url: input }
+            : { path: input }
+          : input
+      ),
     }),
 
   /** List all registered repositories */

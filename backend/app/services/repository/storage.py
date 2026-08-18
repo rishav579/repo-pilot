@@ -21,7 +21,7 @@ class RepositoryStorage:
         self._init_db()
 
     def _init_db(self):
-        """Initialize SQLite tables."""
+        """Initialize SQLite tables and apply schema migrations safely."""
         with self.conn:
             self.conn.execute(
                 """
@@ -36,10 +36,22 @@ class RepositoryStorage:
                     indexed_file_count INTEGER DEFAULT 0,
                     indexed_chunk_count INTEGER DEFAULT 0,
                     embedding_enabled INTEGER DEFAULT 0,
-                    error_message TEXT
+                    error_message TEXT,
+                    source_type TEXT DEFAULT 'local',
+                    github_url TEXT
                 );
                 """
             )
+
+            # Ensure columns exist for upgraded SQLite databases
+            cursor = self.conn.cursor()
+            cursor.execute("PRAGMA table_info(repositories);")
+            cols = [r["name"] for r in cursor.fetchall()]
+            if "source_type" not in cols:
+                self.conn.execute("ALTER TABLE repositories ADD COLUMN source_type TEXT DEFAULT 'local';")
+            if "github_url" not in cols:
+                self.conn.execute("ALTER TABLE repositories ADD COLUMN github_url TEXT;")
+
             self.conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS file_content_hashes (
@@ -61,8 +73,8 @@ class RepositoryStorage:
                     repository_id, canonical_path, display_name, status,
                     created_at, updated_at, last_indexed_at,
                     indexed_file_count, indexed_chunk_count,
-                    embedding_enabled, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    embedding_enabled, error_message, source_type, github_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     record.repository_id,
@@ -76,6 +88,8 @@ class RepositoryStorage:
                     record.indexed_chunk_count,
                     1 if record.embedding_enabled else 0,
                     record.error_message,
+                    record.source_type,
+                    record.github_url,
                 ),
             )
 
@@ -95,6 +109,17 @@ class RepositoryStorage:
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT * FROM repositories WHERE canonical_path = ?;", (canonical_path,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_record(row)
+
+    def get_repository_by_github_url(self, github_url: str) -> RepositoryRecord | None:
+        """Fetch repository by normalized GitHub URL."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT * FROM repositories WHERE github_url = ?;", (github_url,)
         )
         row = cursor.fetchone()
         if not row:
@@ -124,6 +149,12 @@ class RepositoryStorage:
                 """,
                 (status.value, error_message, repository_id),
             )
+
+    def delete_repository(self, repository_id: str):
+        """Delete repository record and associated file hashes."""
+        with self.conn:
+            self.conn.execute("DELETE FROM repositories WHERE repository_id = ?;", (repository_id,))
+            self.conn.execute("DELETE FROM file_content_hashes WHERE repository_id = ?;", (repository_id,))
 
     def get_file_hashes(self, repository_id: str) -> dict[str, str]:
         """Retrieve dictionary of relative_path -> content_hash for a repository."""
@@ -155,6 +186,7 @@ class RepositoryStorage:
             )
 
     def _row_to_record(self, row: sqlite3.Row) -> RepositoryRecord:
+        keys = row.keys()
         return RepositoryRecord(
             repository_id=row["repository_id"],
             canonical_path=row["canonical_path"],
@@ -167,6 +199,8 @@ class RepositoryStorage:
             indexed_chunk_count=int(row["indexed_chunk_count"]),
             embedding_enabled=bool(row["embedding_enabled"]),
             error_message=row["error_message"],
+            source_type=str(row["source_type"]) if "source_type" in keys and row["source_type"] else "local",
+            github_url=str(row["github_url"]) if "github_url" in keys and row["github_url"] else None,
         )
 
     def close(self):

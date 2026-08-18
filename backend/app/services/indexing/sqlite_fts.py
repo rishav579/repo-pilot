@@ -237,6 +237,44 @@ class SQLiteFTSIndex:
         results.sort(key=lambda r: (-r.score, r.chunk.chunk_id))
         return results
 
+    def get_chunks_by_ids(self, chunk_ids: list[str]) -> dict[str, CodeChunk]:
+        """Fetch CodeChunk objects from FTS table by their chunk_ids."""
+        if not chunk_ids:
+            return {}
+
+        cursor = self.conn.cursor()
+        placeholders = ",".join("?" for _ in chunk_ids)
+        cursor.execute(
+            f"""
+            SELECT
+                chunk_id, repository_id, relative_path, language, symbol_name,
+                symbol_kind, parent_name, start_line, end_line,
+                signature, docstring, code_content
+            FROM code_chunks_fts
+            WHERE chunk_id IN ({placeholders});
+            """,
+            tuple(chunk_ids),
+        )
+        rows = cursor.fetchall()
+        result: dict[str, CodeChunk] = {}
+        for row in rows:
+            cid = row["chunk_id"]
+            result[cid] = CodeChunk(
+                chunk_id=cid,
+                repository_id=row["repository_id"] if "repository_id" in row.keys() else "default",
+                relative_path=row["relative_path"],
+                language=row["language"],
+                start_line=int(row["start_line"]),
+                end_line=int(row["end_line"]),
+                code_content=row["code_content"],
+                symbol_name=row["symbol_name"] if row["symbol_name"] else None,
+                symbol_kind=row["symbol_kind"] if row["symbol_kind"] else None,
+                parent_name=row["parent_name"] if row["parent_name"] else None,
+                signature=row["signature"] if row["signature"] else None,
+                docstring=row["docstring"] if row["docstring"] else None,
+            )
+        return result
+
     def close(self):
         """Close database connection."""
         self.conn.close()

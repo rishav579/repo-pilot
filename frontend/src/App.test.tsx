@@ -18,6 +18,8 @@ describe("RepoPilot UI Components", () => {
     indexed_file_count: 98,
     indexed_chunk_count: 423,
     embedding_enabled: false,
+    source_type: "github",
+    github_url: "https://github.com/rishav579/repo-pilot",
   };
 
   it("Header renders title and online status badge", () => {
@@ -46,6 +48,34 @@ describe("RepoPilot UI Components", () => {
     expect(screen.getByText("repo-pilot")).toBeDefined();
     expect(screen.getByText("Ready")).toBeDefined();
     expect(screen.getByText(/98 files \/ 423 chunks/)).toBeDefined();
+  });
+
+  it("RepositoryPanel allows submitting GitHub URL registration", () => {
+    const onSelect = vi.fn();
+    const onRegister = vi.fn();
+    const onTrigger = vi.fn();
+
+    render(
+      <RepositoryPanel
+        repositories={[]}
+        activeRepository={null}
+        onSelectRepository={onSelect}
+        onRegisterRepository={onRegister}
+        onTriggerIndexing={onTrigger}
+        isLoading={false}
+        error={null}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("https://github.com/rishav579/repo-pilot");
+    fireEvent.change(input, {
+      target: { value: "https://github.com/rishav579/repo-pilot" },
+    });
+
+    const submitBtn = screen.getByRole("button", { name: /Clone & Register Repo/i });
+    fireEvent.click(submitBtn);
+
+    expect(onRegister).toHaveBeenCalledWith("https://github.com/rishav579/repo-pilot");
   });
 
   it("QueryPanel allows submitting questions when repository is ready", () => {

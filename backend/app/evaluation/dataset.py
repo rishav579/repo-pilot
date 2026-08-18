@@ -3,6 +3,7 @@ Curated Offline RAG Evaluation Dataset.
 
 Defines realistic repository questions based on RepoPilot's own codebase structure,
 including expected source files and negative/unanswerable test cases.
+Supports evaluation across keyword, semantic, and hybrid retrieval modes.
 """
 
 from pydantic import BaseModel
@@ -69,16 +70,29 @@ EVALUATION_DATASET: list[EvalTestCase] = [
         expected_files=["backend/app/services/rag/prompt.py"],
         description="Finds prompt builder and untrusted evidence isolation in prompt.py.",
     ),
-    # Negative Test Cases
+    # Semantic & Concept Retrieval Cases
     EvalTestCase(
         id="eval-009",
+        question="Where is FastEmbed local dense embedding provider implemented with sentence-transformers?",
+        expected_files=["backend/app/services/retrieval/embeddings/fastembed.py"],
+        description="Finds FastEmbed embedding provider in fastembed.py.",
+    ),
+    EvalTestCase(
+        id="eval-010",
+        question="Where is validate_github_url and clone_github_repository defined in github_cloner?",
+        expected_files=["backend/app/services/ingestion/github_cloner.py"],
+        description="Finds public GitHub repository validation and cloner in github_cloner.py.",
+    ),
+    # Negative Test Cases
+    EvalTestCase(
+        id="eval-011",
         question="Where is quantum_qubit_superposition_matrix_solver_nonexistent implemented?",
         expected_files=[],
         is_answerable=False,
         description="Negative test case: unanswerable quantum feature question.",
     ),
     EvalTestCase(
-        id="eval-010",
+        id="eval-012",
         question="Where is k8s_kubernetes_terraform_aws_lambda_nonexistent defined?",
         expected_files=[],
         is_answerable=False,

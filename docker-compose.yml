@@ -12,8 +12,10 @@ services:
       - REPOPILOT_HOST=0.0.0.0
       - REPOPILOT_PORT=8000
       - REPOPILOT_CORS_ORIGINS=http://localhost:5173,http://localhost:80,http://127.0.0.1:80
-      - SEMANTIC_RETRIEVAL_ENABLED=false
-      - EMBEDDING_PROVIDER=mock
+      - SEMANTIC_RETRIEVAL_ENABLED=true
+      - EMBEDDING_PROVIDER=fastembed
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - EMBEDDING_DIMENSION=384
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
