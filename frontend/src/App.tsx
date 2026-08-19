@@ -15,6 +15,7 @@ import type {
 
 export function App() {
   const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
+  const [isInitialCheckDone, setIsInitialCheckDone] = useState<boolean>(false);
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [activeRepository, setActiveRepository] = useState<RepositoryRecord | null>(null);
 
@@ -24,25 +25,40 @@ export function App() {
 
   // Poll backend health & fetch registered repositories
   const checkHealthAndFetchRepos = useCallback(async () => {
+    let online = false;
     try {
       await api.getHealth();
+      online = true;
       setIsBackendOnline(true);
-
-      const list = await api.listRepositories();
-      setRepositories(list);
-
-      // Auto-select first repository or keep current selection updated
-      if (list.length > 0) {
-        setActiveRepository((prev) => {
-          if (!prev) return list[0];
-          const updated = list.find((r) => r.repository_id === prev.repository_id);
-          return updated || list[0];
-        });
-      } else {
-        setActiveRepository(null);
-      }
     } catch {
       setIsBackendOnline(false);
+    } finally {
+      setIsInitialCheckDone(true);
+    }
+
+    if (online) {
+      try {
+        const list = await api.listRepositories();
+        setRepositories(list);
+
+        // Auto-select first repository or keep current selection updated
+        if (list.length > 0) {
+          setActiveRepository((prev) => {
+            if (!prev) return list[0];
+            const updated = list.find((r) => r.repository_id === prev.repository_id);
+            return updated || list[0];
+          });
+        } else {
+          setActiveRepository(null);
+        }
+      } catch (repoErr) {
+        // Repository fetch failure is isolated from backend health status
+        if (repoErr instanceof ApiError) {
+          setError(`Failed to fetch repositories: ${repoErr.message}`);
+        } else {
+          setError(`Failed to fetch repositories: ${String(repoErr)}`);
+        }
+      }
     }
   }, []);
 
@@ -149,7 +165,9 @@ export function App() {
 
         {/* Right Main Content Area */}
         <section className="workspace-panel">
-          {!isBackendOnline ? (
+          {!isInitialCheckDone ? (
+            <EmptyState type="no_repo" />
+          ) : !isBackendOnline ? (
             <EmptyState type="no_backend" />
           ) : !activeRepository ? (
             <EmptyState type="no_repo" />
