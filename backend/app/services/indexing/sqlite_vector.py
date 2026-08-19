@@ -127,6 +127,24 @@ class SQLiteVectorStorage:
                 (chunk_id, model_name, dimension, vec_json),
             )
 
+    def delete_chunk_embedding(self, chunk_id: str):
+        """Delete a single chunk embedding by chunk_id."""
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM chunk_embeddings WHERE chunk_id = ?;", (chunk_id,)
+            )
+
+    def delete_chunk_embeddings(self, chunk_ids: list[str]):
+        """Delete multiple chunk embeddings by chunk_ids."""
+        if not chunk_ids:
+            return
+        placeholders = ",".join("?" for _ in chunk_ids)
+        with self.conn:
+            self.conn.execute(
+                f"DELETE FROM chunk_embeddings WHERE chunk_id IN ({placeholders});",
+                tuple(chunk_ids),
+            )
+
     def get_chunk_embedding(
         self, chunk_id: str, model_name: str, dimension: int
     ) -> list[float] | None:

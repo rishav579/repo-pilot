@@ -66,9 +66,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(
         typeof input === "string"
-          ? input.startsWith("https://github.com")
-            ? { github_url: input }
-            : { path: input }
+          ? input.trim().startsWith("https://github.com") || input.trim().startsWith("http://github.com")
+            ? { github_url: input.trim() }
+            : { path: input.trim() }
           : input
       ),
     }),
@@ -86,6 +86,12 @@ export const api = {
     request<IndexingSummary>(`/repositories/${encodeURIComponent(repositoryId)}/index`, {
       method: "POST",
       body: JSON.stringify({ enable_semantic: enableSemantic }),
+    }),
+
+  /** Delete repository record and purge indexed data */
+  deleteRepository: (repositoryId: string): Promise<{ status: string; repository_id: string }> =>
+    request<{ status: string; repository_id: string }>(`/repositories/${encodeURIComponent(repositoryId)}`, {
+      method: "DELETE",
     }),
 
   /** Execute grounded repository Q&A query */

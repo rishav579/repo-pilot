@@ -81,10 +81,10 @@ export const AnswerPanel: React.FC<AnswerPanelProps> = ({ response }) => {
         <div className="metrics-bar">
           <span>
             <Clock size={12} style={{ display: "inline", marginRight: "3px" }} />
-            Total: {response.performance_ms.total_ms}ms
+            Total: {response.performance_ms?.total_ms ?? 0}ms
           </span>
-          <span>Retrieval: {response.performance_ms.retrieval_ms}ms</span>
-          <span>LLM Gen: {response.performance_ms.llm_generation_ms}ms</span>
+          <span>Retrieval: {response.performance_ms?.retrieval_ms ?? 0}ms</span>
+          <span>LLM Gen: {response.performance_ms?.llm_generation_ms ?? 0}ms</span>
           <span>Candidates: {response.retrieved_candidate_count}</span>
           <span>Mode: {response.retrieval_mode}</span>
         </div>

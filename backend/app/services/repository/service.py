@@ -94,7 +94,11 @@ class RepositoryService:
         if github_url and github_url.strip():
             return self._register_github_repository(github_url.strip())
         elif path and path.strip():
-            return self._register_local_repository(path.strip())
+            clean_path = path.strip()
+            clean_lower = clean_path.lower()
+            if clean_lower.startswith("https://github.com/") or clean_lower.startswith("http://github.com/"):
+                return self._register_github_repository(clean_path)
+            return self._register_local_repository(clean_path)
         else:
             raise ScannerError("Either 'path' or 'github_url' must be provided for repository registration.")
 

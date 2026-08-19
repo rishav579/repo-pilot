@@ -42,4 +42,38 @@ describe("RepoPilot API Client", () => {
       "Network or server connection failure: Failed to fetch"
     );
   });
+
+  it("should send DELETE request to repository endpoint", async () => {
+    const mockResponse = { status: "deleted", repository_id: "repo-123" };
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    } as Response);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await api.deleteRepository("repo-123");
+    expect(res).toEqual(mockResponse);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/repositories/repo-123"),
+      expect.objectContaining({ method: "DELETE" })
+    );
+  });
+
+  it("should trim and send GitHub URL in registerRepository", async () => {
+    const mockResponse = { repository_id: "repo-gh-abc", status: "registered" };
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    } as Response);
+    vi.stubGlobal("fetch", mockFetch);
+
+    await api.registerRepository("  https://github.com/rishav579/repo-pilot  ");
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/repositories"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ github_url: "https://github.com/rishav579/repo-pilot" }),
+      })
+    );
+  });
 });

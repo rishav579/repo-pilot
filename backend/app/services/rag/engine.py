@@ -101,8 +101,11 @@ class RAGService:
                 performance_ms=metrics,
             )
 
-        # Ensure repository is indexed into the FTS index
-        if repo_record:
+        # Ensure repository is indexed into the FTS index if pending
+        if repo_record and (
+            repo_record.status == RepositoryStatus.REGISTERED
+            or repo_record.indexed_chunk_count == 0
+        ):
             self.repository_service.index_repository(repo_record.repository_id)
             repo_record = self.repository_service.get_repository(repo_record.repository_id)
 
@@ -257,3 +260,4 @@ class RAGService:
     def close(self):
         """Close resources."""
         self.retrieval_service.close()
+        self.repository_service.close()

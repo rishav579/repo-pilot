@@ -14,11 +14,8 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ type, customMessage }) =
           <AlertCircle size={36} className="empty-icon" style={{ color: "#ef4444" }} />
           <h4 style={{ color: "#f87171", fontSize: "1.1rem" }}>Backend Service Offline</h4>
           <p style={{ maxWidth: "480px", fontSize: "0.875rem" }}>
-            {customMessage || "Cannot connect to RepoPilot FastAPI engine at http://127.0.0.1:8000. Please start the backend service."}
+            {customMessage || "Unable to reach the RepoPilot backend. Please try again in a moment."}
           </p>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", backgroundColor: "#0b1120", padding: "0.5rem 1rem", borderRadius: "0.375rem" }}>
-            cd backend && uvicorn app.main:app --reload
-          </div>
         </div>
       );
 

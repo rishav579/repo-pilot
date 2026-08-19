@@ -126,3 +126,25 @@ class TestGitHubRepositoryServiceIntegration:
         deleted = repo_service.delete_repository(record.repository_id)
         assert deleted is True
         assert not Path(canonical_path).exists()
+
+    def test_missing_git_binary_raises_clear_scanner_error(self, tmp_path, monkeypatch):
+        """Simulate missing git binary and verify clean error message."""
+        def mock_run(*args, **kwargs):
+            raise FileNotFoundError("git not found")
+
+        monkeypatch.setattr("subprocess.run", mock_run)
+        dest = tmp_path / "clones" / "test_repo"
+
+        with pytest.raises(ScannerError) as exc_info:
+            clone_github_repository("https://github.com/rishav579/repo-pilot", dest)
+
+        assert "Git is not installed" in str(exc_info.value)
+
+    def test_register_path_with_github_url_routes_to_github_cloner(self, repo_service):
+        """Verify register_repository auto-detects GitHub URL passed in path parameter."""
+        record = repo_service.register_repository(path="https://github.com/rishav579/repo-pilot")
+        assert record.source_type == "github"
+        assert record.github_url == "https://github.com/rishav579/repo-pilot"
+        assert record.status == RepositoryStatus.REGISTERED
+        assert Path(record.canonical_path).exists()
+        repo_service.delete_repository(record.repository_id)

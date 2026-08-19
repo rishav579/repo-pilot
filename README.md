@@ -238,7 +238,7 @@ repo-pilot/
 │   │   │   ├── repository/    # Repository lifecycle management
 │   │   │   └── retrieval/     # Hybrid search & Code-Aware Reranker
 │   │   └── main.py            # FastAPI entry point
-│   ├── tests/                 # 111 backend unit/integration tests
+│   ├── tests/                 # 131 backend unit/integration tests
 │   ├── .env.example
 │   ├── Dockerfile
 │   └── requirements.txt

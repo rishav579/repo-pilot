@@ -27,7 +27,6 @@ export function App() {
     try {
       await api.getHealth();
       setIsBackendOnline(true);
-      setError(null);
 
       const list = await api.listRepositories();
       setRepositories(list);
@@ -39,6 +38,8 @@ export function App() {
           const updated = list.find((r) => r.repository_id === prev.repository_id);
           return updated || list[0];
         });
+      } else {
+        setActiveRepository(null);
       }
     } catch {
       setIsBackendOnline(false);
@@ -89,6 +90,28 @@ export function App() {
     }
   };
 
+  // Handle repository deletion
+  const handleDeleteRepository = async (repoId: string) => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      await api.deleteRepository(repoId);
+      if (activeRepository?.repository_id === repoId) {
+        setActiveRepository(null);
+        setRagResponse(null);
+      }
+      await checkHealthAndFetchRepos();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(`Delete failed: ${err.message}`);
+      } else {
+        setError(`Delete error: ${String(err)}`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Handle natural language query submission
   const handleQuerySubmit = async (req: RAGRequest) => {
     setError(null);
@@ -119,6 +142,7 @@ export function App() {
           onSelectRepository={setActiveRepository}
           onRegisterRepository={handleRegisterRepository}
           onTriggerIndexing={handleTriggerIndexing}
+          onDeleteRepository={handleDeleteRepository}
           isLoading={isLoading}
           error={error}
         />

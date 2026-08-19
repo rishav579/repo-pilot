@@ -89,7 +89,9 @@ class SemanticRetriever(BaseRetriever):
         # Find missing chunks in chunk_map and load them from fts_index if possible
         missing_cids = [cid for cid in all_vectors if cid not in self.chunk_map]
         if missing_cids and self.fts_index:
-            loaded_chunks = self.fts_index.get_chunks_by_ids(missing_cids)
+            loaded_chunks = self.fts_index.get_chunks_by_ids(
+                missing_cids, repository_id=repository_id
+            )
             self.chunk_map.update(loaded_chunks)
 
         results: list[SearchResult] = []

@@ -21,7 +21,8 @@ from app.services.ingestion.scanner import ScannerError
 
 # Strict pattern for public HTTPS GitHub repo URLs
 _GITHUB_URL_REGEX = re.compile(
-    r"^https://github\.com/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+?)(?:\.git)?/?$"
+    r"^https://github\.com/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+?)(?:\.git)?/?$",
+    re.IGNORECASE,
 )
 
 # Forbidden characters that might indicate command injection
@@ -49,7 +50,7 @@ def validate_github_url(url: str) -> tuple[str, str, str]:
     if _FORBIDDEN_CHARS_REGEX.search(clean_url):
         raise ScannerError("Invalid GitHub URL: Contains forbidden shell or format characters.")
 
-    if not clean_url.startswith("https://github.com/"):
+    if not clean_url.lower().startswith("https://github.com/"):
         raise ScannerError(
             "Invalid repository URL: Only public HTTPS GitHub URLs (https://github.com/owner/repo) are supported."
         )
@@ -115,6 +116,10 @@ def clone_github_repository(github_url: str, dest_dir: Path, timeout_seconds: in
         raise ScannerError(
             f"Failed to clone GitHub repository '{canonical_url}': {err_msg}"
         )
+    except FileNotFoundError:
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir, ignore_errors=True)
+        raise ScannerError("Git is not installed or not available in system PATH.")
     except Exception as e:
         if dest_dir.exists():
             shutil.rmtree(dest_dir, ignore_errors=True)

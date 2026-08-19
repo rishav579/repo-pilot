@@ -237,24 +237,39 @@ class SQLiteFTSIndex:
         results.sort(key=lambda r: (-r.score, r.chunk.chunk_id))
         return results
 
-    def get_chunks_by_ids(self, chunk_ids: list[str]) -> dict[str, CodeChunk]:
-        """Fetch CodeChunk objects from FTS table by their chunk_ids."""
+    def get_chunks_by_ids(
+        self, chunk_ids: list[str], repository_id: str | None = None
+    ) -> dict[str, CodeChunk]:
+        """Fetch CodeChunk objects from FTS table by their chunk_ids, optionally filtered by repository_id."""
         if not chunk_ids:
             return {}
 
         cursor = self.conn.cursor()
         placeholders = ",".join("?" for _ in chunk_ids)
-        cursor.execute(
-            f"""
-            SELECT
-                chunk_id, repository_id, relative_path, language, symbol_name,
-                symbol_kind, parent_name, start_line, end_line,
-                signature, docstring, code_content
-            FROM code_chunks_fts
-            WHERE chunk_id IN ({placeholders});
-            """,
-            tuple(chunk_ids),
-        )
+        if repository_id:
+            cursor.execute(
+                f"""
+                SELECT
+                    chunk_id, repository_id, relative_path, language, symbol_name,
+                    symbol_kind, parent_name, start_line, end_line,
+                    signature, docstring, code_content
+                FROM code_chunks_fts
+                WHERE chunk_id IN ({placeholders}) AND repository_id = ?;
+                """,
+                (*chunk_ids, repository_id),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT
+                    chunk_id, repository_id, relative_path, language, symbol_name,
+                    symbol_kind, parent_name, start_line, end_line,
+                    signature, docstring, code_content
+                FROM code_chunks_fts
+                WHERE chunk_id IN ({placeholders});
+                """,
+                tuple(chunk_ids),
+            )
         rows = cursor.fetchall()
         result: dict[str, CodeChunk] = {}
         for row in rows:

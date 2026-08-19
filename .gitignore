@@ -105,3 +105,4 @@ logs/
 .cache/
 data/
 backend/data/
+.agents/

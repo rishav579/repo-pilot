@@ -8,6 +8,7 @@ interface RepositoryPanelProps {
   onSelectRepository: (repo: RepositoryRecord) => void;
   onRegisterRepository: (pathOrUrl: string) => Promise<void>;
   onTriggerIndexing: (repoId: string, enableSemantic?: boolean) => Promise<IndexingSummary | void>;
+  onDeleteRepository?: (repoId: string) => Promise<void>;
   isLoading: boolean;
   error: string | null;
 }

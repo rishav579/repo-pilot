@@ -268,6 +268,31 @@ class TestRAGServiceIntegration:
         assert "empty or unusable" in response.answer
         srv.close()
 
+    def test_ready_repository_query_does_not_reindex(self, sample_repo, monkeypatch):
+        srv = RAGService(db_path=":memory:")
+        rec = srv.repository_service.register_repository(str(sample_repo))
+        srv.repository_service.index_repository(rec.repository_id)
+
+        # Track calls to index_repository
+        index_calls = []
+        original_index = srv.repository_service.index_repository
+
+        def spy_index(repo_id, **kwargs):
+            index_calls.append(repo_id)
+            return original_index(repo_id, **kwargs)
+
+        monkeypatch.setattr(srv.repository_service, "index_repository", spy_index)
+
+        req = RAGRequest(
+            repository_path=rec.repository_id,
+            question="Where is add?",
+            mode="keyword",
+        )
+        response = srv.query(req)
+        assert response.status == "grounded"
+        assert len(index_calls) == 0  # No redundant indexing when already READY
+        srv.close()
+
 
 class TestRAGAPIEndpoint:
     """API Contract tests for POST /repositories/query using TestClient."""

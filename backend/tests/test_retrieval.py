@@ -99,6 +99,41 @@ class TestDeduplicationAndRanking:
         assert deduped[0].chunk.chunk_id == "a_file.py:L1-L5:func"
         assert deduped[1].chunk.chunk_id == "b_file.py:L1-L5:func"
 
+    def test_get_chunks_by_ids_repository_filtering(self):
+        """get_chunks_by_ids should correctly filter by repository_id when provided."""
+        fts = SQLiteFTSIndex(db_path=":memory:")
+        c1 = CodeChunk(
+            chunk_id="common.py:L1-L5",
+            repository_id="repo-1",
+            relative_path="common.py",
+            language="Python",
+            start_line=1,
+            end_line=5,
+            code_content="def func(): return 'repo1'",
+        )
+        c2 = CodeChunk(
+            chunk_id="common.py:L1-L5",
+            repository_id="repo-2",
+            relative_path="common.py",
+            language="Python",
+            start_line=1,
+            end_line=5,
+            code_content="def func(): return 'repo2'",
+        )
+        fts.index_chunks([c1, c2])
+
+        # Filter by repo-1
+        res_repo1 = fts.get_chunks_by_ids(["common.py:L1-L5"], repository_id="repo-1")
+        assert len(res_repo1) == 1
+        assert res_repo1["common.py:L1-L5"].repository_id == "repo-1"
+
+        # Filter by repo-2
+        res_repo2 = fts.get_chunks_by_ids(["common.py:L1-L5"], repository_id="repo-2")
+        assert len(res_repo2) == 1
+        assert res_repo2["common.py:L1-L5"].repository_id == "repo-2"
+
+        fts.close()
+
 
 class TestRetrievalService:
     """Tests for RetrievalService orchestration."""
