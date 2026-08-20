@@ -291,30 +291,49 @@ class RepositoryService:
 
             # 5. Semantic Embedding Generation (if enabled)
             if should_embed:
+                mname = self.embedding_provider.model_name
+                dim = self.embedding_provider.dimension
+
+                chunks_to_embed: list[CodeChunk] = []
+                cached_chunk_items: list[tuple[str, str, int, list[float]]] = []
+
+                # Fast path: check cache for all chunks
                 for chunk in all_chunks:
                     text = chunk.code_content
-                    mname = self.embedding_provider.model_name
-                    dim = self.embedding_provider.dimension
-
-                    # Check cache
                     cached_vec = self.vector_storage.get_cached_embedding(text, mname)
                     if cached_vec and len(cached_vec) == dim:
-                        self.vector_storage.store_chunk_embedding(
-                            chunk.chunk_id, mname, dim, cached_vec
-                        )
+                        cached_chunk_items.append((chunk.chunk_id, mname, dim, cached_vec))
                         embeddings_reused += 1
-                        continue
+                    else:
+                        chunks_to_embed.append(chunk)
 
-                    # Generate new embedding
-                    try:
-                        vec = self.embedding_provider.embed_text(text)
-                        self.vector_storage.cache_embedding(text, mname, vec)
-                        self.vector_storage.store_chunk_embedding(
-                            chunk.chunk_id, mname, dim, vec
-                        )
-                        embeddings_gen += 1
-                    except EmbeddingError:
-                        continue
+                # Store reused embeddings in batch
+                if cached_chunk_items:
+                    self.vector_storage.store_chunk_embeddings_batch(cached_chunk_items)
+
+                # Generate embeddings for uncached chunks in batches (batch_size=64)
+                if chunks_to_embed:
+                    batch_size = 64
+                    for i in range(0, len(chunks_to_embed), batch_size):
+                        batch_chunks = chunks_to_embed[i : i + batch_size]
+                        batch_texts = [c.code_content for c in batch_chunks]
+                        try:
+                            batch_vectors = self.embedding_provider.embed_batch(batch_texts)
+                            new_chunk_items: list[tuple[str, str, int, list[float]]] = []
+                            new_cache_items: list[tuple[str, str, list[float]]] = []
+
+                            for c, vec in zip(batch_chunks, batch_vectors):
+                                if vec and len(vec) == dim:
+                                    new_chunk_items.append((c.chunk_id, mname, dim, vec))
+                                    new_cache_items.append((c.code_content, mname, vec))
+                                    embeddings_gen += 1
+
+                            if new_chunk_items:
+                                self.vector_storage.store_chunk_embeddings_batch(new_chunk_items)
+                            if new_cache_items:
+                                self.vector_storage.cache_embeddings_batch(new_cache_items)
+                        except EmbeddingError:
+                            continue
 
             # Update Repository Record to READY
             now_str = datetime.now(timezone.utc).isoformat()
@@ -323,7 +342,7 @@ class RepositoryService:
             record.updated_at = now_str
             record.indexed_file_count = files_parsed
             record.indexed_chunk_count = len(all_chunks)
-            record.embedding_enabled = should_embed
+            record.embedding_enabled = bool(should_embed and (embeddings_gen + embeddings_reused > 0))
             record.error_message = None
             self.storage.save_repository(record)
 

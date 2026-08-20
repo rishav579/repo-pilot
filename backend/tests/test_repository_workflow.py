@@ -191,3 +191,164 @@ class TestRepositoryManagementAPI:
         idx_res = client.post(f"/repositories/{repo_id}/index", json={"enable_semantic": False})
         assert idx_res.status_code == 200
         assert idx_res.json()["status"] == "ready"
+
+
+class TestBatchSemanticIndexingAndRecovery:
+    """Tests for batch semantic embedding indexing, failure transitions, and retry behavior."""
+
+    def test_batch_semantic_indexing_success(self, tmp_path):
+        repo_dir = tmp_path / "semantic_repo"
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+        for i in range(10):
+            (repo_dir / f"mod_{i}.py").write_text(f"def func_{i}(): return {i}\n")
+
+        srv = RepositoryService(db_path=":memory:")
+        rec = srv.register_repository(str(repo_dir))
+
+        # Index with semantic embeddings enabled
+        summary = srv.index_repository(rec.repository_id, enable_semantic=True)
+        assert summary.status == RepositoryStatus.READY
+        assert summary.embeddings_generated > 0
+        assert summary.embeddings_reused == 0
+
+        # Verify record in storage is READY
+        updated = srv.get_repository(rec.repository_id)
+        assert updated.status == RepositoryStatus.READY
+        assert updated.embedding_enabled is True
+        assert updated.error_message is None
+
+        # Re-indexing should reuse cached embeddings
+        summary2 = srv.index_repository(rec.repository_id, enable_semantic=True)
+        assert summary2.status == RepositoryStatus.READY
+        assert summary2.embeddings_reused == summary.embeddings_generated
+        assert summary2.embeddings_generated == 0
+
+        srv.close()
+
+    def test_indexing_failure_transitions_to_failed_state(self, tmp_path, monkeypatch):
+        repo_dir = tmp_path / "fail_repo"
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+        (repo_dir / "bad.py").write_text("def bad(): pass\n")
+
+        srv = RepositoryService(db_path=":memory:")
+        rec = srv.register_repository(str(repo_dir))
+
+        # Simulate scanner failure during indexing
+        def mock_scan(*args, **kwargs):
+            raise ScannerError("Simulated filesystem I/O error")
+
+        monkeypatch.setattr("app.services.repository.service.scan_repository", mock_scan)
+
+        summary = srv.index_repository(rec.repository_id)
+        assert summary.status == RepositoryStatus.FAILED
+        assert "Simulated filesystem I/O error" in summary.error_message
+
+        # Verify repository record in storage is marked FAILED
+        updated = srv.get_repository(rec.repository_id)
+        assert updated.status == RepositoryStatus.FAILED
+        assert "Simulated filesystem I/O error" in updated.error_message
+
+        srv.close()
+
+    def test_retry_indexing_recovers_failed_repository(self, tmp_path, monkeypatch):
+        repo_dir = tmp_path / "retry_repo"
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+        (repo_dir / "retry.py").write_text("def retry_func(): return True\n")
+
+        srv = RepositoryService(db_path=":memory:")
+        rec = srv.register_repository(str(repo_dir))
+
+        # Step 1: Force failure
+        def mock_scan_fail(*args, **kwargs):
+            raise ScannerError("Temporary network/disk error")
+
+        monkeypatch.setattr("app.services.repository.service.scan_repository", mock_scan_fail)
+        summary_fail = srv.index_repository(rec.repository_id)
+        assert summary_fail.status == RepositoryStatus.FAILED
+
+        # Step 2: Restore normal behavior and retry indexing
+        monkeypatch.undo()
+        summary_retry = srv.index_repository(rec.repository_id, enable_semantic=True)
+        assert summary_retry.status == RepositoryStatus.READY
+        assert summary_retry.chunks_created > 0
+
+        # Verify repository is now READY with cleared error
+        rec_ready = srv.get_repository(rec.repository_id)
+        assert rec_ready.status == RepositoryStatus.READY
+        assert rec_ready.error_message is None
+
+        srv.close()
+
+    def test_sqlite_vector_batch_storage_and_cache(self):
+        from app.services.indexing.sqlite_vector import SQLiteVectorStorage
+
+        storage = SQLiteVectorStorage(db_path=":memory:")
+
+        # Test batch storing chunk embeddings
+        items = [
+            ("chunk_1", "test-model", 4, [0.1, 0.2, 0.3, 0.4]),
+            ("chunk_2", "test-model", 4, [0.5, 0.6, 0.7, 0.8]),
+            ("chunk_bad", "test-model", 4, [0.1]),  # Wrong dimension, should be skipped
+        ]
+        storage.store_chunk_embeddings_batch(items)
+
+        all_embs = storage.get_all_embeddings("test-model", 4)
+        assert len(all_embs) == 2
+        assert all_embs["chunk_1"] == [0.1, 0.2, 0.3, 0.4]
+        assert all_embs["chunk_2"] == [0.5, 0.6, 0.7, 0.8]
+        assert "chunk_bad" not in all_embs
+
+        # Test batch caching
+        cache_items = [
+            ("def func1(): pass", "test-model", [0.1, 0.2, 0.3, 0.4]),
+            ("def func2(): pass", "test-model", [0.5, 0.6, 0.7, 0.8]),
+        ]
+        storage.cache_embeddings_batch(cache_items)
+
+        c1 = storage.get_cached_embedding("def func1(): pass", "test-model")
+        c2 = storage.get_cached_embedding("def func2(): pass", "test-model")
+        assert c1 == [0.1, 0.2, 0.3, 0.4]
+        assert c2 == [0.5, 0.6, 0.7, 0.8]
+
+        storage.close()
+
+    def test_partial_embedding_failure_semantics(self, tmp_path, monkeypatch):
+        """Verify that when some batches fail, successful batches are preserved and status becomes READY."""
+        from app.services.retrieval.embeddings.base import EmbeddingError
+
+        repo_dir = tmp_path / "partial_fail_repo"
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+        for i in range(10):
+            (repo_dir / f"file_{i}.py").write_text(f"def func_{i}(): return {i}\n")
+
+        srv = RepositoryService(db_path=":memory:")
+        rec = srv.register_repository(str(repo_dir))
+
+        call_count = 0
+        orig_embed_batch = srv.embedding_provider.embed_batch
+
+        def flaky_embed_batch(texts):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First batch succeeds
+                return orig_embed_batch(texts)
+            # Subsequent batch raises EmbeddingError
+            raise EmbeddingError("Simulated batch inference OOM")
+
+        monkeypatch.setattr(srv.embedding_provider, "embed_batch", flaky_embed_batch)
+
+        summary = srv.index_repository(rec.repository_id, enable_semantic=True)
+        assert summary.status == RepositoryStatus.READY
+        assert summary.embeddings_generated > 0
+
+        # Verify record in storage is READY and preserves generated embeddings
+        updated = srv.get_repository(rec.repository_id)
+        assert updated.status == RepositoryStatus.READY
+        assert updated.embedding_enabled is True
+
+        srv.close()

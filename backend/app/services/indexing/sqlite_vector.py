@@ -109,6 +109,30 @@ class SQLiteVectorStorage:
                 (ckey, model_name, vec_json),
             )
 
+    def cache_embeddings_batch(
+        self, items: list[tuple[str, str, list[float]]]
+    ):
+        """
+        Cache multiple embedding vectors in a single SQLite transaction.
+
+        Args:
+            items: List of (text, model_name, vector) tuples.
+        """
+        if not items:
+            return
+        rows = [
+            (self.compute_cache_key(text, model_name), model_name, json.dumps(vec))
+            for text, model_name, vec in items
+        ]
+        with self.conn:
+            self.conn.executemany(
+                """
+                INSERT OR REPLACE INTO embedding_cache (cache_key, model_name, vector_json)
+                VALUES (?, ?, ?);
+                """,
+                rows,
+            )
+
     def store_chunk_embedding(
         self, chunk_id: str, model_name: str, dimension: int, vector: list[float]
     ):
@@ -126,6 +150,32 @@ class SQLiteVectorStorage:
                 """,
                 (chunk_id, model_name, dimension, vec_json),
             )
+
+    def store_chunk_embeddings_batch(
+        self, items: list[tuple[str, str, int, list[float]]]
+    ):
+        """
+        Store multiple chunk embeddings in a single SQLite transaction.
+
+        Args:
+            items: List of (chunk_id, model_name, dimension, vector) tuples.
+        """
+        if not items:
+            return
+        rows = []
+        for chunk_id, model_name, dimension, vector in items:
+            if len(vector) != dimension:
+                continue
+            rows.append((chunk_id, model_name, dimension, json.dumps(vector)))
+        if rows:
+            with self.conn:
+                self.conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO chunk_embeddings (chunk_id, model_name, dimension, vector_json)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    rows,
+                )
 
     def delete_chunk_embedding(self, chunk_id: str):
         """Delete a single chunk embedding by chunk_id."""
