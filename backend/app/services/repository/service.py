@@ -285,6 +285,11 @@ class RepositoryService:
                 self.storage.delete_file_hash(repository_id, del_file)
                 chunks_deleted += 1
 
+            # Persist intermediate progress before FTS and embedding stages
+            record.indexed_file_count = files_parsed
+            record.indexed_chunk_count = len(all_chunks)
+            self.storage.save_repository(record)
+
             # 4. FTS Indexing (Scoped to repository_id)
             self.fts_index.clear(repository_id=repository_id)
             self.fts_index.index_chunks(all_chunks)

@@ -64,9 +64,11 @@ export function App() {
 
   useEffect(() => {
     checkHealthAndFetchRepos();
-    const interval = setInterval(checkHealthAndFetchRepos, 5000);
+    const isAnyIndexing = repositories.some((r) => r.status === "indexing");
+    const intervalMs = isAnyIndexing ? 1500 : 5000;
+    const interval = setInterval(checkHealthAndFetchRepos, intervalMs);
     return () => clearInterval(interval);
-  }, [checkHealthAndFetchRepos]);
+  }, [checkHealthAndFetchRepos, repositories]);
 
   // Handle repository registration
   const handleRegisterRepository = async (path: string) => {
@@ -87,10 +89,9 @@ export function App() {
     }
   };
 
-  // Handle trigger indexing
+  // Handle trigger indexing (non-blocking background task trigger)
   const handleTriggerIndexing = async (repoId: string, enableSemantic?: boolean): Promise<IndexingSummary | void> => {
     setError(null);
-    setIsLoading(true);
     try {
       const summary = await api.triggerIndexing(repoId, enableSemantic);
       await checkHealthAndFetchRepos();
@@ -101,8 +102,6 @@ export function App() {
       } else {
         setError(`Indexing error: ${String(err)}`);
       }
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -172,7 +171,23 @@ export function App() {
           ) : !activeRepository ? (
             <EmptyState type="no_repo" />
           ) : activeRepository.status === "indexing" ? (
-            <EmptyState type="indexing" />
+            <EmptyState
+              type="indexing"
+              customMessage={
+                activeRepository.indexed_file_count > 0 || activeRepository.indexed_chunk_count > 0
+                  ? `Indexing in progress: ${activeRepository.indexed_file_count} files discovered, ${activeRepository.indexed_chunk_count} code chunks parsed. Building search indexes and embeddings...`
+                  : undefined
+              }
+            />
+          ) : activeRepository.status === "failed" ? (
+            <EmptyState
+              type="no_backend"
+              customMessage={
+                activeRepository.error_message
+                  ? `Indexing failed: ${activeRepository.error_message}. Click "Trigger Full Indexing" in the left panel to retry.`
+                  : "Indexing failed. Click \"Trigger Full Indexing\" in the left panel to retry."
+              }
+            />
           ) : (
             <div className="results-container">
               {/* Query Panel */}

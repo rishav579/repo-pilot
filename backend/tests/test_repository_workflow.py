@@ -187,10 +187,33 @@ class TestRepositoryManagementAPI:
         assert status_res.status_code == 200
         assert status_res.json()["repository_id"] == repo_id
 
-        # 4. Trigger Indexing
+        # 4. Trigger Indexing as background task
         idx_res = client.post(f"/repositories/{repo_id}/index", json={"enable_semantic": False})
         assert idx_res.status_code == 200
-        assert idx_res.json()["status"] == "ready"
+        assert idx_res.json()["status"] == "indexing"
+
+        # 5. After background task completes, repository status is READY
+        status_res2 = client.get(f"/repositories/{repo_id}")
+        assert status_res2.status_code == 200
+        assert status_res2.json()["status"] == "ready"
+
+    def test_api_duplicate_indexing_protection(self, sample_repo):
+        # Register Repository
+        reg_res = client.post("/repositories", json={"path": str(sample_repo)})
+        repo_id = reg_res.json()["repository_id"]
+
+        from app.api.router_repositories import get_repository_service
+        srv = get_repository_service()
+        srv.storage.update_status(repo_id, RepositoryStatus.INDEXING)
+
+        # Trigger indexing when already in INDEXING state
+        idx_res = client.post(f"/repositories/{repo_id}/index")
+        assert idx_res.status_code == 200
+        assert idx_res.json()["status"] == "indexing"
+
+    def test_api_index_nonexistent_repository_returns_404(self):
+        res = client.post("/repositories/nonexistent-repo-id/index")
+        assert res.status_code == 404
 
 
 class TestBatchSemanticIndexingAndRecovery:
